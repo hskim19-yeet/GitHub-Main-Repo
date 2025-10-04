@@ -1,0 +1,78 @@
+{% extends "base.html" %} {% block title %}Order{% endblock %} {% block content
+%}
+<h1 class="mb-4">Order List</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %} {% if messages
+%} {% for category, message in messages %}
+<div class="alert alert-{{ category }}">{{ message }}</div>
+{% endfor %} {% endif %} {% endwith %}
+
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>OrderID</th>
+      <th>Username</th>
+      <th>Stock Ticker</th>
+      <th>Quantity</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for o in user_orders %}
+    <tr>
+      <td>{{ o.order_id }}</td>
+      <td>{{ o.user.username }}</td>
+      <td>{{ o.stock.stock_ticker }} ({{ o.stock.company }})</td>
+      <td>{{ o.quantity}}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<hr />
+
+<h2>Add Order</h2>
+<form action="" method="get" onsubmit="addOrder(event)">
+  <div class="mb-3">
+    <label for="user_id" class="form-label">UserID</label>
+    <input type="number" class="form-control" id="user_id" required />
+  </div>
+  <div class="mb-3">
+    <label for="id" class="form-label">StockID</label> <!--id here refers to stock's primary key ID. -->
+    <input type="number" class="form-control" id="id" required />
+  </div>
+  <div class="mb-3">
+    <label for="quantity" class="form-label">Quantity</label>
+    <input type="number" class="form-control" id="quantity" value="1" min="1" required />
+  </div>
+  <button type="submit" class="btn btn-primary">BUY</button>
+</form>
+<hr />
+<h2>Sell (Remove from Orders)</h2>
+<form action="" method="get" onsubmit="sellOrder(event)">
+  <div class="mb-3">
+    <label for="sell_order_id" class="form-label">OrderID</label>
+    <input type="number" class="form-control" id="sell_order_id" required />
+  </div>
+  <button type="submit" class="btn btn-danger">Sell</button>
+</form>
+<script>
+  function sellOrder(event) {
+    event.preventDefault();
+    const id = encodeURIComponent(
+      document.getElementById("sell_order_id").value
+    );
+    window.location.href = `/orders/sell/${id}`;
+  }
+</script>
+
+<script>
+  function addOrder(event) {
+    event.preventDefault();
+    const user_id = encodeURIComponent(document.getElementById("user_id").value);
+    const id = encodeURIComponent(document.getElementById("id").value);
+    const quantity = encodeURIComponent(document.getElementById("quantity").value);                                                                        
+    window.location.href = `/orders/add/${user_id}/${id}/${quantity}`;
+  }
+</script>
+{% endblock %}

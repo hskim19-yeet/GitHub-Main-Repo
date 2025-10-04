@@ -1,0 +1,79 @@
+{% extends "base.html" %} {% block title %}user{% endblock %} {% block content
+%}
+
+
+<h1 class="mb-4">User List</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>UserID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Lastname</th>
+                    <th>Firstname</th>
+                    <th>Password</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user.user_id }}</td> <!-- changed user.id to user.user_id-->
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>{{ user.lastname }}</td>
+                    <td>{{ user.firstname }}</td>
+                    <td>{{ user.password }}</td>
+                    
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <hr>
+        <h2>Add User</h2>
+        <form action="" method="get" onsubmit="addUser(event)">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username" required> <!--do not change id to user_id. It's not a variable.-->
+            </div>
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" name="email" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+            <div class="mb-3">
+                <label for="lastname" class="form-label">Last Name</label>
+                <input type="text" class="form-control" id="lastname" name="lastname" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+             <div class="mb-3">
+                <label for="firstname" class="form-label">First Name</label>
+                <input type="text" class="form-control" id="firstname" name="firstname" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="text" class="form-control" id="password" name="password" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+            <button type="submit" class="btn btn-primary">Add User</button>
+        </form>
+    </div>
+    <script>
+        function addUser(event) {
+            event.preventDefault();
+            const username = encodeURIComponent(document.getElementById('username').value);
+            const email = encodeURIComponent(document.getElementById('email').value);
+            const lastname = encodeURIComponent(document.getElementById('lastname').value);
+            const firstname = encodeURIComponent(document.getElementById('firstname').value);
+            const password = encodeURIComponent(document.getElementById('password').value);   
+            window.location.href = `/add_user/${username}/${email}/${lastname}/${firstname}/${password}`;
+        }
+    </script>
+{% endblock %}

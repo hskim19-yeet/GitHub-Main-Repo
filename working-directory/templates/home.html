@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="container min-vh-75 d-flex flex-column justify-content-center align-items-center text-center">
+  <div class="mb-5">
+    <h1 class="display-4 fw-bold text-warning">Welcome to StockCraft</h1>
+    <p class="lead text-warning">Let's craft your wealth.</p>
+  </div>
+</div>
+<div class="row mt-4">
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h5 class="card-title">Be the next Warren Buffett</h5>
+      <p class="card-text">Only possible if you sign up.</p>
+      <a href="#" class="btn btn-primary">Sign up!</a>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="alert alert-success" role="alert">
+      <h5 class="alert-heading">Returning user?</h5>
+      <p>Welcome back, please log in!</p>
+      <h5 class="alert-heading">New to StockCraft?</h5>
+      <p>Join us and we'll teach you!</p>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="d-grid gap-2">
+      <button class="btn btn-primary">Log in!</button>
+      <button class="btn btn-secondary">Sign up!</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

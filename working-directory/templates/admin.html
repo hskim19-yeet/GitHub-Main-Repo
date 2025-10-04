@@ -1,0 +1,39 @@
+{% extends "base.html" %} {% block title %}Admin{% endblock %} {% block content
+%}
+<div class="row">
+  <div class="col-md-12">
+    <h1 class="display-4">Welcome to Admin Console</h1>
+    <p class="lead">Create, delete, edit stocks and more!</p>
+  </div>
+</div>
+
+<div class="container">
+  <button type="button" class="btn btn-primary">Create</button>
+  <button type="button" class="btn btn-primary">Edit/Delete</button>
+</div>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th scope="col">StockID</th>
+      <th scope="col">Ticker</th>
+      <th scope="col">Company Name</th>
+      <th scope="col">Initial Price</th>
+      <th scope="col">Volume</th>
+      <th scope="col">Market Price</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for stock in stocks %}
+    <tr>
+      <td>{{ stock.id }}</td>
+      <td>{{ stock.stock_ticker }}</td>
+      <td>{{ stock.company }}</td>
+      <td>${{ "%.2f"|format(stock.initial_price) }}</td>
+      <td>{{ stock.available_stocks }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

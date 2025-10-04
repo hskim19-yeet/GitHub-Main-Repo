@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Cash Accounts{% endblock %}
+{% block content %}
+<h1>Cash Accounts</h1>
+<p>Use /add_cash_account/&lt;cash_account_id&gt;/&lt;user_id&gt;/&lt;current_balance&gt; to add.</p>
+<!--<table style="width:100%;border-collapse:collapse;">
+    <thead>
+        <tr>
+            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">cash_account_id</th>
+            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">user_id</th>
+            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">current_balance</th>
+            <th style="text-align:left;border-bottom:1px solid #ddd;padding:8px;">updated_at</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in cash_accounts %}
+        <tr>
+            <td style="border-bottom:1px solid #f0f0f0;padding:8px;">{{ a.cash_account_id }}</td>
+            <td style="border-bottom:1px solid #f0f0f0;padding:8px;">{{ a.user_id }}</td>
+            <td style="border-bottom:1px solid #f0f0f0;padding:8px;">{{ "%.2f"|format(a.current_balance) }}</td>
+            <td style="border-bottom:1px solid #f0f0f0;padding:8px;">{{ a.updated_at }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4" style="padding:12px;color:#666;">No cash accounts yet.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table> -->
+
+<table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Cash Account ID</th>
+                    <th>User ID</th>
+                    <th>Current Balance</th>
+                    <th>Updated At</th>
+
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in cash_accounts %}
+                <tr>
+                    <td>{{ account.cash_account_id }}</td> 
+                    <td>{{ account.user.username }}</td>
+                    <td>{{ account.current_balance }}</td>
+                    <td>{{ account.updated_at }}</td>
+                    
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+{% endblock %}

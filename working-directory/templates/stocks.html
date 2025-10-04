@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Stock{% endblock %}
+{% block content %}
+
+<h1 class="mb-4">Stocks Inventory</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    
+                    <th>ID</th>
+                    <th>Stock Ticker</th>
+                    <th>Company</th>
+                    <th>Initial Price</th>
+                    <th>Available Stocks</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stock in stocks %}
+                <tr>
+                     <!-- changed user.id to user.user_id-->
+                    <td>{{ stock.id }}</td>
+                    <td>{{ stock.stock_ticker }}</td>
+                    <td>{{ stock.company }}</td>
+                    <td>{{ stock.initial_price }}</td>
+                    <td>{{ stock.available_stocks }}</td>
+                    
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <hr>
+        <h2>Add Stock</h2>
+        <form action="{{ url_for('add_stock') }}" method="POST">
+            
+            <div class="mb-3">
+                <label for="stock_ticker" class="form-label">Stock Ticker</label>
+                <input type="text" class="form-control" id="stock_ticker" name="stock_ticker" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+            <div class="mb-3">
+                <label for="company" class="form-label">Company</label>
+                <input type="text" class="form-control" id="company" name="company" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+             <div class="mb-3">
+                <label for="initial_price" class="form-label">Initial Price (float)</label>
+                <input type="number" class="form-control" id="initial_price" step="0.01" name="initial_price" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+            <div class="mb-3">
+                <label for="available_stocks" class="form-label">Available Stocks</label>
+                <input type="number" class="form-control" id="available_stocks" step="1" name="available_stocks" required>  <!-- do not change id to user_id. It's not a variable.-->
+            </div>
+
+            <button type="submit" class="btn btn-primary">Add Stock</button>
+        </form>
+    </div>
+    
+    {% endblock %}
