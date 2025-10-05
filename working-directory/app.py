@@ -33,7 +33,7 @@ def admin_required(f):
             return login_manager.unauthorized()
         if not current_user.is_admin:
             flash("Admin access required.", "error")
-            
+            return redirect(url_for("home"))
         return f(*args, **kwargs)
     return wrapper
 
@@ -47,7 +47,7 @@ class User(UserMixin, db.Model):
     firstname = db.Column(db.String(120), nullable=False)
     password = db.Column(db.String(200), nullable=False)
 
-    is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    is_admin = db.Column(db.Boolean, default=False)
 
     # Relationships
     orders = db.relationship("Order", backref="user", lazy=True)
@@ -92,7 +92,7 @@ class Order(db.Model):
 class Transaction(db.Model):
     __tablename__ = "transaction"
     transaction_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    order_id = db.Column(db.Integer, db.ForeignKey("order.order_id"), nullable=False)
+    order_id = db.Column(db.Integer, db.ForeignKey("order.order_id"), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.user_id"), nullable=False)
     stock_id = db.Column(db.Integer, db.ForeignKey("stock.id"), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
@@ -100,7 +100,6 @@ class Transaction(db.Model):
 
 with app.app_context():
     db.create_all()
-
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -110,13 +109,32 @@ def signup():
         lastname = request.form.get("lastname", "").strip()
         firstname = request.form.get("firstname", "").strip()
         password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        
+
+        if User.query.filter_by(username=username).first():
+            flash("Username already taken.", "error")
+            return render_template("signup.html")
+        
+        existing_email = User.query.filter_by(email=email).first()
+        if existing_email:
+            flash("Email address already in use.", "error")
+            return render_template("signup.html")
+
+        if password != confirm_password:
+            flash("Passwords do not match.", "error")
+            return render_template("signup.html")
 
         if not all([username, email, lastname, firstname, password]):
             flash("All fields are required.", "error")
             return render_template("signup.html")
 
+        first_user= (User.query.count() == 0)
+        
         u = User(username=username, email=email,
-                 lastname=lastname, firstname=firstname)
+                 lastname=lastname, firstname=firstname,
+                 is_admin=first_user)
+        
         u.set_password(password)
         try:
             db.session.add(u)
@@ -128,6 +146,54 @@ def signup():
             flash(f"Error creating account: {e}", "error")
             return render_template("signup.html")
     return render_template("signup.html")
+
+
+@app.route("/admin/add_admin", methods=["GET", "POST"])
+@login_required
+@admin_required
+def add_admin():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
+        lastname = request.form.get("lastname", "").strip()
+        firstname = request.form.get("firstname", "").strip()
+        password = request.form.get("password", "")
+        confirm_password=request.form.get("confirm_password","")
+        
+
+        if User.query.filter_by(username=username).first():
+            flash("Username already taken.", "error")
+            return render_template("add_admin.html")
+        
+        existing_email = User.query.filter_by(email=email).first()
+        if existing_email:
+            flash("Email address already in use.", "error")
+            return render_template("add_admin.html")
+        
+        if password != confirm_password:
+            flash("Passwords do not match.", "danger")
+            return render_template("add_admin.html")
+
+        if not all([username, email, lastname, firstname, password]):
+            flash("All fields are required.", "error")
+            return render_template("add_admin.html")
+
+        is_admin = bool(request.form.get("is_admin"))
+        u = User(username=username, email=email,
+                 lastname=lastname, firstname=firstname,
+                 is_admin=True)
+        
+        u.set_password(password)
+        try:
+            db.session.add(u)
+            db.session.commit()
+            flash("Account created. Please log in.", "success")
+            return redirect(url_for("login"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error creating account: {e}", "error")
+            return render_template("add_admin.html")
+    return render_template("add_admin.html")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -178,9 +244,28 @@ def orders():
     return render_template("orders.html", stocks=stocks, acct=acct, positions=positions, user_orders=user_orders)
 
 
-@app.route("/orders/add/<int:user_id>/<int:stock_id>/<int:quantity>")
-def add_order(user_id, stock_id, quantity):
+@app.route("/orders/add", methods=["POST"])
+def add_order():    
     try:
+        stock_id = int(request.form.get("stock_id", 0))
+        quantity = int(request.form.get("quantity", 0))
+        user_id = current_user.user_id
+        
+        if quantity <= 0:
+            flash("Quantity invalid!", "danger")
+            return redirect(url_for("orders"))
+
+        stock=Stock.query.get(stock_id)
+        if not stock:
+            flash("Stock not found.", "danger")
+            return redirect(url_for("orders"))
+
+        if stock.available_stocks < quantity:   
+            flash(f"Not enough stocks available. Available: {stock.available_stocks}", "danger")
+            return redirect(url_for("orders"))
+        
+        stock.available_stocks = stock.available_stocks - quantity
+
         o = Order(user_id=user_id, stock_id=stock_id, quantity=quantity)
         db.session.add(o)
         db.session.commit()
@@ -201,10 +286,11 @@ def add_order(user_id, stock_id, quantity):
 
 
         db.session.commit()
-        flash("Order added and position added to portfolio.")
+        flash(f"Order added and position added to portfolio! {quantity} shares of {stock.company} purchased. Remaining: {stock.available_stocks}", "success")
     except Exception as e:
         db.session.rollback()
         flash(f"Error adding order: {e}")
+
     return redirect(url_for("orders"))
 
 
@@ -254,6 +340,7 @@ def add_user(username, email, lastname, firstname, password):
 
 
 @app.route('/stocks')
+@login_required
 def stocks():
     stocks = Stock.query.all()
     return render_template('stocks.html', stocks=stocks)
@@ -265,7 +352,8 @@ def stocks():
 def add_stock():
     if not current_user.is_admin:
         flash("Admin access required.", "error")
-        return 
+        return redirect(url_for('stocks'))
+     
     stock_ticker = request.form.get('stock_ticker')
     company = request.form.get('company')
     initial_price = request.form.get('initial_price', type=float)
@@ -274,6 +362,10 @@ def add_stock():
     if not (stock_ticker and company and initial_price and available_stocks):
         flash('Missing required information!', 'error')
         return redirect(url_for('stocks'))
+    
+    if Stock.query.filter_by(stock_ticker=stock_ticker).first():
+        flash("Stock already exists.", "error")
+        return redirect(url_for("stocks"))
 
     new_stock = Stock(stock_ticker=stock_ticker,
                       company=company,
@@ -331,12 +423,10 @@ with app.app_context():
 
 
 @app.route("/portfolio")
+@login_required
 def portfolio_index():
-    u = User.query.order_by(User.user_id.asc()).first()
-    if not u:
-        flash("No users yet.", "error")
-        return redirect(url_for("users"))
-    return redirect(url_for("portfolio", user_id=u.user_id))
+    
+    return redirect(url_for("portfolio", user_id=current_user.user_id))
 
 
 @app.route("/portfolio/<int:user_id>")
@@ -346,11 +436,6 @@ def portfolio(user_id):
     positions = Portfolio.query.filter_by(user_id=user_id).all()
     return render_template("portfolio.html", user=user, acct=acct, positions=positions)
 
-
-@app.route("/cash_accounts")
-def cash_accounts():
-    rows = CashAccount.query.order_by(CashAccount.cash_account_id.desc()).all()
-    return render_template("cash_account.html", cash_accounts=rows)
 
 
 @app.route('/add_cash/<int:user_id>/<float:amount>')
@@ -400,20 +485,43 @@ def add_position(user_id, stock_id, quantity):
 @app.route('/sell_position/<int:holding_id>', methods=["POST"])
 @login_required
 def sell_position(holding_id):
-    quantity = int(request.form.get("quantity", 0)) 
+    try:
 
-    pos = Portfolio.query.filter_by(holding_id=holding_id, user_id=current_user.user_id).first_or_404()
+        quantity = int(request.form.get("quantity", 0)) 
 
-    if quantity <= 0 or quantity > pos.quantity:
-        flash('Invalid amount!', "danger")
-        return redirect(url_for('portfolio', user_id=current_user.user_id))
+        pos = Portfolio.query.filter_by(holding_id=holding_id, user_id=current_user.user_id).first_or_404()
 
-    pos.quantity = pos.quantity - quantity
-    if pos.quantity == 0:
-        db.session.delete(pos)
+        if quantity <= 0 or quantity > pos.quantity:
+            flash('Invalid amount!', "danger")
+            return redirect(url_for('portfolio', user_id=current_user.user_id))
+
+        stock = Stock.query.get(pos.stock_id)
+        if not stock:
+            flash("Stock not found.", "danger")
+            return redirect(url_for("portfolio", user_id=current_user.user_id))
+
+        stock.available_stocks = stock.available_stocks + quantity
+
+        transaction=Transaction(
+            order_id = None,
+            user_id = current_user.user_id,
+            stock_id = pos.stock_id,
+            quantity = -quantity
+        )
+        db.session.add(transaction)
+
+        pos.quantity = pos.quantity - quantity
+        if pos.quantity == 0:
+            db.session.delete(pos)
+
+        
+        db.session.commit()
+        flash(f"Sold {quantity} shares of {pos.stock.stock_ticker} , {pos.stock.company}! Inventory updated: {stock.available_stocks} shares now available.", "success")
     
-    db.session.commit()
-    flash(f"Sold {quantity} shares of {pos.stock.stock_ticker} , {pos.stock.company}!")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error selling position: {e}", "danger")
+
     return redirect(url_for("portfolio", user_id=current_user.user_id))
 
 
@@ -476,6 +584,8 @@ def home():
 
 
 @app.route("/admin")
+@login_required
+@admin_required
 def admin():
     stocks = Stock.query.all()
     return render_template("admin.html", stocks=stocks)

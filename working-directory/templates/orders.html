@@ -32,22 +32,19 @@
 <hr />
 
 <h2>Add Order</h2>
-<form action="" method="get" onsubmit="addOrder(event)">
-  <div class="mb-3">
-    <label for="user_id" class="form-label">UserID</label>
-    <input type="number" class="form-control" id="user_id" required />
-  </div>
-  <div class="mb-3">
-    <label for="id" class="form-label">StockID</label> <!--id here refers to stock's primary key ID. -->
-    <input type="number" class="form-control" id="id" required />
-  </div>
-  <div class="mb-3">
+<form action=" {{url_for('add_order')}}" method="POST" class="gap-2">
+  
+    <input type="text" name="stock_id" class="form-control w-25" id="stock_id" required>
+    <label for="stock_id" class="w-50">Stock ID</label>
+
+    <input type="number" name="quantity" class="form-control w-25" id="quantity" required>
     <label for="quantity" class="form-label">Quantity</label>
-    <input type="number" class="form-control" id="quantity" value="1" min="1" required />
-  </div>
-  <button type="submit" class="btn btn-primary">BUY</button>
+
+    <button type="submit" class="btn btn-success flex-shrink-0">Buy</button>
+
 </form>
 <hr />
+
 <h2>Sell (Remove from Orders)</h2>
 <form action="" method="get" onsubmit="sellOrder(event)">
   <div class="mb-3">

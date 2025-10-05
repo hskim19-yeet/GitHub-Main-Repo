@@ -11,7 +11,7 @@
   {% endif %}
 {% endwith %}
 
-<form method="post" class="row g-3" autocomplete="off">
+<form method="POST" class="row g-3" autocomplete="off">
   <div class="col-md-6">
     <label class="form-label">Username</label>
     <input name="username" type="text" class="form-control" required>
@@ -32,6 +32,16 @@
     <label class="form-label">Password</label>
     <input name="password" type="password" class="form-control" required>
   </div>
+  <div class="col-md-12">
+    <input name="confirm_password" type="password" class="form-control" required>
+    <label class="form-label">Confirm Password</label>
+  </div>
+<!-- Admin checkbox
+  <div class = "form-check mb-3">
+    <input type = "checkbox" class="form-check-input" id="is_admin" name="is_admin">
+    <label class = "form-check-label" for = "is_admin">User is Administrator</label>
+  </div>
+-->
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Sign Up</button>
     <a href="{{ url_for('login') }}" class="btn btn-link">Already have an account? Log in</a>
