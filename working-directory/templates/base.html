@@ -25,10 +25,14 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Home</a></li>
+            {% if current_user.is_authenticated and current_user.is_admin %}
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin') }}">Admin</a></li>
+            {% endif %}
             <li class="nav-item"><a class="nav-link" href="{{ url_for('wallet') }}">Wallet</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('orders') }}">Order</a></li>
+            {% if current_user.is_authenticated and current_user.is_admin %}
             <li class="nav-item"><a class="nav-link" href="{{ url_for('users') }}">Users</a></li>
+            {% endif %}
             <li class="nav-item"><a class="nav-link" href="{{ url_for('stocks') }}">Stocks</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('portfolio_index') }}">Portfolio</a></li>
           </ul>
