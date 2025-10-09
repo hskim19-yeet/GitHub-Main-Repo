@@ -97,7 +97,7 @@ class Transaction(db.Model):
 class MarketSetting(db.Model):
     __tablename__ = "market_setting"
     id = db.Column(db.Integer, primary_key=True)
-    hours = db.Column(db.String(50), nullable=False, default="8:00 AM-5:00 PM")
+    hours = db.Column(db.String(50), nullable=False, default="08:00-17:00")
     schedule = db.Column(db.String(500), nullable=True, default="")
 
 
@@ -137,7 +137,7 @@ def get_closed_dates(schedule: str):
 def get_market_context():
     setting = MarketSetting.query.first()
     if not setting:
-        setting = MarketSetting(hours="8:00 AM-5:00 PM", schedule="")
+        setting = MarketSetting(hours="08:00-17:00", schedule="")
         db.session.add(setting)
         db.session.commit()
     now = datetime.now()
@@ -163,7 +163,7 @@ def get_market_context():
             formatted_dates.append(f"{parsed.month} {parsed.day} {parsed.year}")
         else:
             formatted_dates.append(raw)
-    display_hours = f"{open_time.strftime('%I:%M %p')} to {close_time.strftime('%I:%M %p')}"
+    display_hours = f"{open_time.strftime('%H:%M')} to {close_time.strftime('%H:%M')}"
 
     return {
         "setting": setting,
@@ -315,22 +315,27 @@ def update_market_settings():
     setting = market["setting"]
     form_type = request.form.get("form_type")
     if form_type == "hours":
-        hours = (request.form.get("market_hours") or "").strip()
-        if hours:
-            parts = hours.split("-", 1)
-            if len(parts) != 2:
-                flash("Incorrect format.", "danger")
-                return redirect(url_for("admin_dashboard"))
-            try:
-                parse_time_string(parts[0])
-                parse_time_string(parts[1])
-            except ValueError:
-                flash("Incorrect format.", "danger")
-                return redirect(url_for("admin_dashboard"))
-            setting.hours = hours
-        else:
-            flash("Hours value required.", "danger")
+        start_raw = request.form.get("market_start_hour")
+        end_raw = request.form.get("market_end_hour")
+        if start_raw is None or end_raw is None:
+            flash("Start and end hours required.", "danger")
             return redirect(url_for("admin_dashboard"))
+        try:
+            start_hour = int(start_raw)
+            end_hour = int(end_raw)
+        except (TypeError, ValueError):
+            flash("Hours must be integers in 24-hour format.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+            flash("Hours must be between 0 and 23.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        if start_hour == end_hour:
+            flash("Start and end hours cannot be the same.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        if start_hour > end_hour:
+            flash("Start hour must be before end hour.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        setting.hours = f"{start_hour:02d}:00-{end_hour:02d}:00"
     elif form_type == "schedule":
         month_raw = request.form.get("schedule_month")
         day_raw = request.form.get("schedule_day")
@@ -559,7 +564,7 @@ with app.app_context():
     db.create_all()
     setting = MarketSetting.query.first()
     if not setting:
-        setting = MarketSetting(hours="8 a.m.-5 p.m.", schedule="")
+        setting = MarketSetting(hours="08:00-17:00", schedule="")
         db.session.add(setting)
         db.session.commit()
 
