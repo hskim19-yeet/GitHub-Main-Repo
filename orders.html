@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Order{% endblock %}
+{% block content %}
+<h1 class="mb-4">Orders</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{% if market.market_open %}
+<div class="alert alert-success">
+  Market open until {{ market.close_time.strftime("%I:%M %p") }}.
+</div>
+{% else %}
+<div class="alert alert-warning">
+  Market closed. Next session starts at {{ market.open_time.strftime("%I:%M %p") }}.
+  {% if market.closed_today %}
+  Closed for scheduled date.
+  {% endif %}
+</div>
+{% endif %}
+
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>OrderID</th>
+      <th>Username</th>
+      <th>Stock</th>
+      <th>Quantity</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for o in user_orders %}
+    <tr>
+      <td>{{ o.order_id }}</td>
+      <td>{{ o.user.username }}</td>
+      <td>{{ o.stock.stock_ticker }} ({{ o.stock.company }})</td>
+      <td>{{ o.quantity }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<hr class="my-4">
+
+<h2>Add Order</h2>
+<form action="{{ url_for('add_order') }}" method="POST" class="row g-2">
+  <div class="col-md-3">
+    <label for="stock_id" class="form-label">Stock ID</label>
+    <input type="text" name="stock_id" class="form-control" id="stock_id" required>
+  </div>
+  <div class="col-md-3">
+    <label for="quantity" class="form-label">Quantity</label>
+    <input type="number" name="quantity" class="form-control" id="quantity" required>
+  </div>
+  <div class="col-md-auto align-self-end">
+    <button type="submit" class="btn btn-success" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Buy</button>
+  </div>
+</form>
+
+<hr class="my-4">
+
+<h2>Sell (Remove from Orders)</h2>
+<form action="" method="get" onsubmit="sellOrder(event)" class="row g-2">
+  <div class="col-md-3">
+    <label for="sell_order_id" class="form-label">OrderID</label>
+    <input type="number" class="form-control" id="sell_order_id" required>
+  </div>
+  <div class="col-md-auto align-self-end">
+    <button type="submit" class="btn btn-danger" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Sell</button>
+  </div>
+</form>
+
+<script>
+  const marketConfig = {
+    hours: "{{ market.setting.hours }}",
+    closedDates: {{ market.closed_dates|list|sort|tojson }}
+  };
+  function parseHours(value) {
+    const parts = (value || "").split("-");
+    if (parts.length !== 2) {
+      return { open: "8:00am", close: "5:00pm" };
+    }
+    return { open: parts[0].trim(), close: parts[1].trim() };
+  }
+  function minutesFrom(timeValue) {
+    let value = (timeValue || "").toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
+    if ((value.endsWith("am") || value.endsWith("pm")) && !value.includes(":")) {
+      value = `${value.slice(0, -2)}:00${value.slice(-2)}`;
+    }
+    if (/^\d{1,2}$/.test(value)) {
+      value = `${value}:00`;
+    }
+    const match = value.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
+    if (!match) {
+      return NaN;
+    }
+    let hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    const suffix = match[3];
+    if (suffix === "pm" && hour !== 12) {
+      hour += 12;
+    }
+    if (suffix === "am" && hour === 12) {
+      hour = 0;
+    }
+    return hour * 60 + minute;
+  }
+  function computeAllow() {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const schedule = parseHours(marketConfig.hours);
+    const openMinutes = minutesFrom(schedule.open);
+    const closeMinutes = minutesFrom(schedule.close);
+    const today = now.toISOString().slice(0, 10);
+    const closedByDate = marketConfig.closedDates.includes(today);
+    let within = false;
+    if (openMinutes <= closeMinutes) {
+      within = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+    } else {
+      within = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+    }
+    return within && !closedByDate;
+  }
+  function syncMarketButtons() {
+    const allow = computeAllow();
+    document.body.dataset.marketOpen = allow ? "1" : "0";
+    document.querySelectorAll('[data-market-toggle="trade"]').forEach((button) => {
+      if (allow) {
+        button.removeAttribute("disabled");
+      } else {
+        button.setAttribute("disabled", "disabled");
+      }
+    });
+  }
+  document.addEventListener("DOMContentLoaded", syncMarketButtons);
+  setInterval(syncMarketButtons, 60000);
+  function sellOrder(event) {
+    event.preventDefault();
+    if (document.body.dataset.marketOpen === "0") {
+      return;
+    }
+    const id = encodeURIComponent(document.getElementById("sell_order_id").value);
+    window.location.href = `/orders/sell/${id}`;
+  }
+</script>
+{% endblock %}
