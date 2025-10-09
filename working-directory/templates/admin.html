@@ -39,15 +39,23 @@
       <h5 class="mb-0">Change Market Schedule</h5>
     </div>
     <div class="card-body">
-      <p class="mb-2">Enter one date per line using Month Day Year.</p>
-      <form action="{{ url_for('update_market_settings') }}" method="POST" class="row g-3">
+      <p class="mb-2">Enter market closure date.</p>
+      <form action="{{ url_for('update_market_settings') }}" method="POST" class="row g-3 align-items-end">
         <input type="hidden" name="form_type" value="schedule">
-        <div class="col-12">
-          <label for="market_schedule" class="form-label">Market closures</label>
-          <textarea name="market_schedule" id="market_schedule" class="form-control" rows="6">{{ market.setting.schedule }}</textarea>
+        <div class="col-md-3">
+          <label for="schedule_month" class="form-label">Month</label>
+          <input type="number" name="schedule_month" id="schedule_month" class="form-control" min="1" max="12" required>
+        </div>
+        <div class="col-md-3">
+          <label for="schedule_day" class="form-label">Day</label>
+          <input type="number" name="schedule_day" id="schedule_day" class="form-control" min="1" max="31" required>
+        </div>
+        <div class="col-md-3">
+          <label for="schedule_year" class="form-label">Year</label>
+          <input type="number" name="schedule_year" id="schedule_year" class="form-control" min="1900" required>
         </div>
         <div class="col-auto">
-          <button type="submit" class="btn btn-warning text-dark">Save Schedule</button>
+          <button type="submit" class="btn btn-warning text-dark">Add Date</button>
         </div>
       </form>
       <div class="mt-4">
