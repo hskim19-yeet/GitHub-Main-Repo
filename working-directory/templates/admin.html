@@ -24,8 +24,12 @@
       <form action="{{ url_for('update_market_settings') }}" method="POST" class="row g-3 align-items-end">
         <input type="hidden" name="form_type" value="hours">
         <div class="col-md-4">
-          <label for="market_hours" class="form-label">New hours</label>
-          <input type="text" name="market_hours" id="market_hours" class="form-control" value="{{ market.setting.hours }}" required>
+          <label for="market_start_hour" class="form-label">Market opens</label>
+          <input type="number" name="market_start_hour" id="market_start_hour" class="form-control" min="0" max="23" value="{{ '%02d'|format(market.open_time.hour) }}" required>
+        </div>
+        <div class="col-md-4">
+          <label for="market_end_hour" class="form-label">Market closes</label>
+          <input type="number" name="market_end_hour" id="market_end_hour" class="form-control" min="0" max="23" value="{{ '%02d'|format(market.close_time.hour) }}" required>
         </div>
         <div class="col-md-auto">
           <button type="submit" class="btn btn-warning text-dark">Save Hours</button>
