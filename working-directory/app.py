@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from functools import wraps
 from decimal import Decimal, InvalidOperation
+from datetime import datetime, time
 
 app = Flask(__name__)
 
@@ -22,9 +23,6 @@ def load_user(user_id: str):
 
 
 login_manager.login_view = "login"
-
-## Admin ##
-
 
 def admin_required(f):
     @wraps(f)
@@ -49,7 +47,6 @@ class User(UserMixin, db.Model):
 
     is_admin = db.Column(db.Boolean, default=False)
 
-    # Relationships
     orders = db.relationship("Order", backref="user", lazy=True)
     portfolios = db.relationship("Portfolio", backref="user", lazy=True)
     cash_account = db.relationship(
@@ -69,7 +66,6 @@ class User(UserMixin, db.Model):
 class Stock(db.Model):
     __tablename__ = "stock"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    # stock_id = db.Column(db.String(80), unique=True)
     stock_ticker = db.Column(db.String(80), unique=True, nullable=False)
     company = db.Column(db.String(120), unique=True, nullable=False)
     initial_price = db.Column(db.Float, nullable=False)
@@ -98,8 +94,90 @@ class Transaction(db.Model):
     quantity = db.Column(db.Integer, nullable=False)
 
 
-with app.app_context():
-    db.create_all()
+class MarketSetting(db.Model):
+    __tablename__ = "market_setting"
+    id = db.Column(db.Integer, primary_key=True)
+    hours = db.Column(db.String(50), nullable=False, default="8 a.m.-5 p.m.")
+    schedule = db.Column(db.String(500), nullable=True, default="")
+
+
+def parse_time_string(value: str):
+    cleaned = value.strip().lower().replace(" ", "").replace(".", "")
+    if not cleaned:
+        raise ValueError
+    if cleaned.endswith(("am", "pm")) and ":" not in cleaned[:-2]:
+        cleaned = f"{cleaned[:-2]}:00{cleaned[-2:]}"
+    if cleaned.isdigit():
+        cleaned = f"{cleaned}:00"
+    for fmt in ("%H:%M", "%I:%M%p"):
+        try:
+            return datetime.strptime(cleaned, fmt).time()
+        except ValueError:
+            continue
+    raise ValueError
+
+
+def parse_market_hours(hours: str):
+    try:
+        start_str, end_str = hours.split("-", 1)
+        start_time = parse_time_string(start_str)
+        end_time = parse_time_string(end_str)
+        return start_time, end_time
+    except ValueError:
+        return time(8, 0), time(17, 0)
+
+
+def get_closed_dates(schedule: str):
+    if not schedule:
+        return set()
+    parts = schedule.replace(",", "\n").splitlines()
+    return {x.strip() for x in parts if x.strip()}
+
+
+def get_market_context():
+    setting = MarketSetting.query.first()
+    if not setting:
+        setting = MarketSetting(hours="8 a.m.-5 p.m.", schedule="")
+        db.session.add(setting)
+        db.session.commit()
+    now = datetime.now()
+    open_time, close_time = parse_market_hours(setting.hours or "")
+    closed_dates = get_closed_dates(setting.schedule or "")
+    today = now.strftime("%Y-%m-%d")
+    closed_today = today in closed_dates
+    after_midnight = open_time > close_time
+    current_time = now.time()
+    time_open = False
+    formatted_dates = []
+    for date_str in sorted(closed_dates):
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            formatted_dates.append(f"{dt.strftime('%B')} {dt.day} {dt.year}")
+        except ValueError:
+            formatted_dates.append(date_str)
+    if after_midnight:
+        time_open = current_time >= open_time or current_time <= close_time
+    else:
+        time_open = open_time <= current_time <= close_time
+    market_open = time_open and not closed_today
+    def format_display_time(t: time):
+        formatted = t.strftime("%I:%M %p").lstrip("0")
+        body = formatted[:-3].rstrip()
+        suffix = formatted[-2:]
+        if body.endswith(":00"):
+            body = body[:-3]
+        suffix = "a.m." if suffix == "AM" else "p.m."
+        return f"{body} {suffix}"
+    return {
+        "setting": setting,
+        "market_open": market_open,
+        "closed_today": closed_today,
+        "open_time": open_time,
+        "close_time": close_time,
+        "closed_dates": closed_dates,
+        "closed_dates_formatted": formatted_dates,
+        "display_hours": f"{format_display_time(open_time)} to {format_display_time(close_time)}",
+    }
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -228,7 +306,59 @@ def admin_dashboard():
     users = User.query.order_by(User.user_id.desc()).all()
     stocks = Stock.query.all()
     orders = Order.query.order_by(Order.order_id.desc()).all()
-    return render_template("admin.html", users=users, stocks=stocks, orders=orders)
+    market = get_market_context()
+    return render_template("admin.html", users=users, stocks=stocks, orders=orders, market=market)
+
+
+@app.route("/admin/market-settings", methods=["POST"])
+@login_required
+@admin_required
+def update_market_settings():
+    market = get_market_context()
+    setting = market["setting"]
+    form_type = request.form.get("form_type")
+    if form_type == "hours":
+        hours = (request.form.get("market_hours") or "").strip()
+        if hours:
+            parts = hours.split("-", 1)
+            if len(parts) != 2:
+                flash("Incorrect format.", "danger")
+                return redirect(url_for("admin_dashboard"))
+            try:
+                parse_time_string(parts[0])
+                parse_time_string(parts[1])
+            except ValueError:
+                flash("Incorrect format.", "danger")
+                return redirect(url_for("admin_dashboard"))
+            setting.hours = hours
+        else:
+            flash("Hours value required.", "danger")
+            return redirect(url_for("admin_dashboard"))
+    elif form_type == "schedule":
+        schedule = (request.form.get("market_schedule") or "").strip()
+        if schedule:
+            lines = []
+            for raw in schedule.replace(",", "\n").splitlines():
+                value = raw.strip()
+                if not value:
+                    continue
+                parsed = None
+                for fmt in ("%B %d %Y", "%b %d %Y", "%Y-%m-%d"):
+                    try:
+                        parsed = datetime.strptime(value, fmt)
+                        break
+                    except ValueError:
+                        continue
+                if parsed:
+                    lines.append(parsed.strftime("%Y-%m-%d"))
+                else:
+                    lines.append(value)
+            setting.schedule = "\n".join(lines)
+        else:
+            setting.schedule = ""
+    db.session.commit()
+    flash("Market settings updated.", "success")
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.route("/orders", methods=["GET"])
@@ -241,12 +371,18 @@ def orders():
     user_orders = Order.query.filter_by(user_id=current_user.user_id).order_by(
         Order.order_id.desc()).limit(20).all()
 
-    return render_template("orders.html", stocks=stocks, acct=acct, positions=positions, user_orders=user_orders)
+    market = get_market_context()
+    return render_template("orders.html", stocks=stocks, acct=acct, positions=positions, user_orders=user_orders, market=market)
 
 
 @app.route("/orders/add", methods=["POST"])
+@login_required
 def add_order():    
     try:
+        market = get_market_context()
+        if not market["market_open"]:
+            flash("Market is closed.", "danger")
+            return redirect(url_for("orders"))
         stock_id = int(request.form.get("stock_id", 0))
         quantity = int(request.form.get("quantity", 0))
         user_id = current_user.user_id
@@ -278,7 +414,7 @@ def add_order():
         db.session.add(t)
 
         pos = Portfolio.query.filter_by(user_id=user_id, stock_id=stock_id).first()
-        if pos: ## pos represents a position from buying stocks.
+        if pos:
             pos.quantity = pos.quantity + quantity
         else:
             pos = Portfolio(user_id=user_id, stock_id=stock_id, quantity=quantity)
@@ -295,8 +431,13 @@ def add_order():
 
 
 @app.route("/orders/sell/<int:order_id>")
+@login_required
 def sell_order(order_id):
     try:
+        market = get_market_context()
+        if not market["market_open"]:
+            flash("Market is closed.", "danger")
+            return redirect(url_for("orders"))
         o = Order.query.get(order_id)
         if not o:
             flash("Order not found.")
@@ -384,7 +525,6 @@ def add_stock():
     return redirect(url_for('stocks'))
 
 
-## Christian's part ##
 class CashAccount(db.Model):
     __tablename__ = "cash_account"
     cash_account_id = db.Column(
@@ -420,6 +560,11 @@ class Portfolio(db.Model):
 
 with app.app_context():
     db.create_all()
+    setting = MarketSetting.query.first()
+    if not setting:
+        setting = MarketSetting(hours="8 a.m.-5 p.m.", schedule="")
+        db.session.add(setting)
+        db.session.commit()
 
 
 @app.route("/portfolio")
@@ -434,7 +579,8 @@ def portfolio(user_id):
     user = User.query.get_or_404(user_id)
     acct = CashAccount.query.filter_by(user_id=user_id).first()
     positions = Portfolio.query.filter_by(user_id=user_id).all()
-    return render_template("portfolio.html", user=user, acct=acct, positions=positions)
+    market = get_market_context()
+    return render_template("portfolio.html", user=user, acct=acct, positions=positions, market=market)
 
 
 
@@ -486,6 +632,10 @@ def add_position(user_id, stock_id, quantity):
 @login_required
 def sell_position(holding_id):
     try:
+        market = get_market_context()
+        if not market["market_open"]:
+            flash("Market is closed.", "danger")
+            return redirect(url_for("portfolio", user_id=current_user.user_id))
 
         quantity = int(request.form.get("quantity", 0)) 
 
@@ -588,7 +738,10 @@ def home():
 @admin_required
 def admin():
     stocks = Stock.query.all()
-    return render_template("admin.html", stocks=stocks)
+    users = User.query.order_by(User.user_id.desc()).all()
+    orders = Order.query.order_by(Order.order_id.desc()).all()
+    market = get_market_context()
+    return render_template("admin.html", stocks=stocks, users=users, orders=orders, market=market)
 
 
 @app.route("/wallet", methods=["GET"])

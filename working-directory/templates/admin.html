@@ -1,47 +1,159 @@
-{% extends "base.html" %} {% block title %}Admin{% endblock %} {% block content
-%}
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
 <div class="container my-5">
-  <div class="text-center mb-5">
+  <div class="text-center mb-4">
     <h1 class="fw-bold text-warning">Welcome to Admin Console</h1>
     <p class="lead text-warning">Create. Delete. Edit.</p>
   </div>
-</div>
 
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
-
-<div class="card shadow-lg border-0 rounded-4">
-  <div class="card-header bg-dark text-white"> 
-    <h4 class="mb-0">Stock List</h4>
+  <div class="card shadow border-0 mb-4">
+    <div class="card-header bg-dark text-white">
+      <h5 class="mb-0">Change Market Hours</h5>
+    </div>
+    <div class="card-body">
+      <p class="mb-2">Current: {{ market.display_hours }}</p>
+      <form action="{{ url_for('update_market_settings') }}" method="POST" class="row g-3 align-items-end">
+        <input type="hidden" name="form_type" value="hours">
+        <div class="col-md-4">
+          <label for="market_hours" class="form-label">New hours</label>
+          <input type="text" name="market_hours" id="market_hours" class="form-control" value="{{ market.setting.hours }}" required>
+        </div>
+        <div class="col-md-auto">
+          <button type="submit" class="btn btn-warning text-dark">Save Hours</button>
+        </div>
+      </form>
+    </div>
   </div>
-  <div class="card-body">
-    <table class="table">
-      <thead>
-        <tr>
-          <th scope="col">StockID</th>
-          <th scope="col">Ticker</th>
-          <th scope="col">Company Name</th>
-          <th scope="col">Initial Price</th>
-          <th scope="col">Volume</th>
-          <th scope="col">Current Price</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for stock in stocks %}
-        <tr>
-          <td>{{ stock.id }}</td>
-          <td>{{ stock.stock_ticker }}</td>
-          <td>{{ stock.company }}</td>
-          <td>${{ "%.2f"|format(stock.initial_price) }}</td>
-          <td>{{ stock.available_stocks }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>    
-</div>
 
-<div class="container">
-  <button type="button" class="btn btn-primary">Create</button>
-  <button type="button" class="btn btn-primary">Edit/Delete</button>
+  <div class="card shadow border-0 mb-4">
+    <div class="card-header bg-dark text-white">
+      <h5 class="mb-0">Change Market Schedule</h5>
+    </div>
+    <div class="card-body">
+      <p class="mb-2">Enter one date per line using Month Day Year.</p>
+      <form action="{{ url_for('update_market_settings') }}" method="POST" class="row g-3">
+        <input type="hidden" name="form_type" value="schedule">
+        <div class="col-12">
+          <label for="market_schedule" class="form-label">Market closures</label>
+          <textarea name="market_schedule" id="market_schedule" class="form-control" rows="6">{{ market.setting.schedule }}</textarea>
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-warning text-dark">Save Schedule</button>
+        </div>
+      </form>
+      <div class="mt-4">
+        <h6 class="fw-semibold">Upcoming closures</h6>
+        {% if market.closed_dates_formatted %}
+        <ul class="list-group list-group-flush">
+          {% for date in market.closed_dates_formatted %}
+          <li class="list-group-item px-0">{{ date }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0">No dates scheduled.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow border-0 mb-5">
+    <div class="card-header bg-dark text-white">
+      <h5 class="mb-0">Create New Stocks</h5>
+    </div>
+    <div class="card-body">
+      <form action="{{ url_for('add_stock') }}" method="POST" class="row g-3">
+        <div class="col-md-4">
+          <label for="stock_ticker" class="form-label">Ticker</label>
+          <input type="text" name="stock_ticker" id="stock_ticker" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label for="company" class="form-label">Company</label>
+          <input type="text" name="company" id="company" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label for="initial_price" class="form-label">Initial Price</label>
+          <input type="number" name="initial_price" id="initial_price" step="0.01" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label for="available_stocks" class="form-label">Available Stocks</label>
+          <input type="number" name="available_stocks" id="available_stocks" step="1" class="form-control" required>
+        </div>
+        <div class="col-auto align-self-end">
+          <button type="submit" class="btn btn-primary">Add Stock</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-lg border-0 rounded-4 mb-4">
+    <div class="card-header bg-dark text-white">
+      <h4 class="mb-0">Stock List</h4>
+    </div>
+    <div class="card-body">
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">StockID</th>
+            <th scope="col">Ticker</th>
+            <th scope="col">Company</th>
+            <th scope="col">Initial Price</th>
+            <th scope="col">Volume</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for stock in stocks %}
+          <tr>
+            <td>{{ stock.id }}</td>
+            <td>{{ stock.stock_ticker }}</td>
+            <td>{{ stock.company }}</td>
+            <td>${{ "%.2f"|format(stock.initial_price) }}</td>
+            <td>{{ stock.available_stocks }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card shadow border-0 rounded-4">
+    <div class="card-header bg-dark text-white">
+      <h4 class="mb-0">Recent Orders</h4>
+    </div>
+    <div class="card-body">
+      {% if orders %}
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th scope="col">OrderID</th>
+            <th scope="col">User</th>
+            <th scope="col">Stock</th>
+            <th scope="col">Quantity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in orders[:10] %}
+          <tr>
+            <td>{{ order.order_id }}</td>
+            <td>{{ order.user.username }}</td>
+            <td>{{ order.stock.stock_ticker }}</td>
+            <td>{{ order.quantity }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="mb-0 text-muted">No orders yet.</p>
+      {% endif %}
+    </div>
+  </div>
 </div>
 {% endblock %}

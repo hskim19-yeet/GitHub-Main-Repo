@@ -5,12 +5,28 @@
 <div class="container mt-5">
   <h1 class="mb-4">{{ user.username }}'s Portfolio</h1>
   {% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-  {% for category, message in messages %}
-  <div class="alert alert-{{ category }}">{{ message }}</div>
-  {% endfor %}
-  {% endif %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
   {% endwith %}
+
+  {% if market.market_open %}
+  <div class="alert alert-success d-flex justify-content-between align-items-center">
+    <span>Market open until {{ market.close_time.strftime("%I:%M %p") }}</span>
+  </div>
+  {% else %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-center">
+    <div>
+      Market closed. Next session starts at {{ market.open_time.strftime("%I:%M %p") }}.
+      {% if market.closed_today %}
+      Today follows the scheduled market closure.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <h2>Cash Account</h2>
   {% if acct %}
   <p><strong>Current Balance:</strong> ${{ '%.2f'|format(acct.current_balance) }}</p>
@@ -19,25 +35,27 @@
       <input id="cashAmount" type="number" step="0.01" class="form-control" placeholder="Amount" required>
     </div>
     <div class="col-auto">
-      <button type="submit" class="btn btn-success" onclick="action='deposit'">Deposit</button>
+      <button type="submit" class="btn btn-success" onclick="actionType='deposit'">Deposit</button>
     </div>
     <div class="col-auto">
-      <button type="submit" class="btn btn-warning" onclick="action='withdraw'">Withdraw</button>
+      <button type="submit" class="btn btn-warning" onclick="actionType='withdraw'">Withdraw</button>
     </div>
   </form>
   {% else %}
   <p>No account yet. Deposit to create one.</p>
   {% endif %}
+
   <hr class="my-4">
+
   <h2>Stock Positions</h2>
   <table class="table table-bordered">
     <thead>
       <tr>
         <th>Holding ID</th>
-        <th>Stock Ticker</th> 
+        <th>Stock Ticker</th>
         <th>Quantity</th>
         <th>Updated At</th>
-      
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -48,45 +66,121 @@
         <td>{{ p.quantity }}</td>
         <td>{{ p.updated_at }}</td>
         <td>
-          <form action="{{ url_for('sell_position', holding_id=p.holding_id) }}" method="POST" class= "d-flex">
-            <input type="number" name="quantity" min="1" max="{{ p.quantity }}" class="form-control form-control-sm me-2" placeholder="Quantity" required>  
-            <button type="submit" class="btn btn-danger btn-sm">Sell</button>
+          <form action="{{ url_for('sell_position', holding_id=p.holding_id) }}" method="POST" class="d-flex">
+            <input type="number" name="quantity" min="1" max="{{ p.quantity }}" class="form-control form-control-sm me-2" placeholder="Quantity" required>
+            <button type="submit" class="btn btn-danger btn-sm" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Sell</button>
           </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+
   <h2>Add Position</h2>
-  <form onsubmit="addPosition(event)">
-    <div class="mb-3">
-      <label for="id" class="form-label">Stock ID</label>
-      <input type="number" class="form-control" id="id" required>
+  <form onsubmit="addPosition(event)" class="row g-3">
+    <div class="col-md-4">
+      <label for="position_stock_id" class="form-label">Stock ID</label>
+      <input type="number" class="form-control" id="position_stock_id" required>
     </div>
-    <div class="mb-3">
-      <label for="quantity" class="form-label">Quantity</label>
-      <input type="number" class="form-control" id="quantity" required>
+    <div class="col-md-4">
+      <label for="position_quantity" class="form-label">Quantity</label>
+      <input type="number" class="form-control" id="position_quantity" required>
     </div>
-    <button type="submit" class="btn btn-primary">Add Position</button>
+    <div class="col-md-auto align-self-end">
+      <button type="submit" class="btn btn-primary" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Add Position</button>
+    </div>
   </form>
 </div>
+
 <script>
-  let action = '';
+  let actionType = '';
   function adjustCash(event) {
     event.preventDefault();
     const amt = document.getElementById('cashAmount').value;
-    if (action === 'deposit') {
+    if (!amt) {
+      return;
+    }
+    if (actionType === 'deposit') {
       window.location.href = `/add_cash/{{ user.user_id }}/${amt}`;
-    } else {
+    } else if (actionType === 'withdraw') {
       window.location.href = `/withdraw_cash/{{ user.user_id }}/${amt}`;
     }
   }
   function addPosition(event) {
     event.preventDefault();
-    const id = document.getElementById('id').value;
-    const qty = document.getElementById('quantity').value;
+    if (document.body.dataset.marketOpen === "0") {
+      return;
+    }
+    const id = document.getElementById('position_stock_id').value;
+    const qty = document.getElementById('position_quantity').value;
+    if (!id || !qty) {
+      return;
+    }
     window.location.href = `/add_position/{{ user.user_id }}/${id}/${qty}`;
   }
+  const marketConfig = {
+    hours: "{{ market.setting.hours }}",
+    closedDates: {{ market.closed_dates|list|sort|tojson }}
+  };
+  function parseHours(value) {
+    const parts = (value || "").split("-");
+    if (parts.length !== 2) {
+      return { open: "8:00am", close: "5:00pm" };
+    }
+    return { open: parts[0].trim(), close: parts[1].trim() };
+  }
+  function minutesFrom(timeValue) {
+    let value = (timeValue || "").toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
+    if ((value.endsWith("am") || value.endsWith("pm")) && !value.includes(":")) {
+      value = `${value.slice(0, -2)}:00${value.slice(-2)}`;
+    }
+    if (/^\d{1,2}$/.test(value)) {
+      value = `${value}:00`;
+    }
+    const match = value.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
+    if (!match) {
+      return NaN;
+    }
+    let hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    const suffix = match[3];
+    if (suffix === "pm" && hour !== 12) {
+      hour += 12;
+    }
+    if (suffix === "am" && hour === 12) {
+      hour = 0;
+    }
+    return hour * 60 + minute;
+  }
+  function computeAllow() {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const schedule = parseHours(marketConfig.hours);
+    const openMinutes = minutesFrom(schedule.open);
+    const closeMinutes = minutesFrom(schedule.close);
+    const today = now.toISOString().slice(0, 10);
+    const closedByDate = marketConfig.closedDates.includes(today);
+    let within = false;
+    if (openMinutes <= closeMinutes) {
+      within = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+    } else {
+      within = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+    }
+    return within && !closedByDate;
+  }
+  function syncMarketButtons() {
+    const allow = computeAllow();
+    document.body.dataset.marketOpen = allow ? "1" : "0";
+    document.querySelectorAll('[data-market-toggle="trade"]').forEach((button) => {
+      if (allow) {
+        button.removeAttribute("disabled");
+      } else {
+        button.setAttribute("disabled", "disabled");
+      }
+    });
+  }
+  document.addEventListener("DOMContentLoaded", syncMarketButtons);
+  setInterval(syncMarketButtons, 60000);
 </script>
 
 {% endblock %}
