@@ -150,7 +150,19 @@ def get_market_context():
     if today in closed_dates:
         market_open = False
 
-    formatted_dates = sorted(list(closed_dates))
+    formatted_dates = []
+    for raw in sorted(closed_dates):
+        parsed = None
+        for fmt in ("%Y-%m-%d", "%B %d %Y", "%b %d %Y"):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                break
+            except ValueError:
+                continue
+        if parsed:
+            formatted_dates.append(f"{parsed.month} {parsed.day} {parsed.year}")
+        else:
+            formatted_dates.append(raw)
     display_hours = f"{open_time.strftime('%I:%M %p')} to {close_time.strftime('%I:%M %p')}"
 
     return {
@@ -320,27 +332,27 @@ def update_market_settings():
             flash("Hours value required.", "danger")
             return redirect(url_for("admin_dashboard"))
     elif form_type == "schedule":
-        schedule = (request.form.get("market_schedule") or "").strip()
-        if schedule:
-            lines = []
-            for raw in schedule.replace(",", "\n").splitlines():
-                value = raw.strip()
-                if not value:
-                    continue
-                parsed = None
-                for fmt in ("%B %d %Y", "%b %d %Y", "%Y-%m-%d"):
-                    try:
-                        parsed = datetime.strptime(value, fmt)
-                        break
-                    except ValueError:
-                        continue
-                if parsed:
-                    lines.append(parsed.strftime("%Y-%m-%d"))
-                else:
-                    lines.append(value)
-            setting.schedule = "\n".join(lines)
-        else:
-            setting.schedule = ""
+        month_raw = request.form.get("schedule_month")
+        day_raw = request.form.get("schedule_day")
+        year_raw = request.form.get("schedule_year")
+        if not all([month_raw, day_raw, year_raw]):
+            flash("All date fields required.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        try:
+            month = int(month_raw)
+            day = int(day_raw)
+            year = int(year_raw)
+        except ValueError:
+            flash("Date values must be integers.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        try:
+            parsed = datetime(year, month, day)
+        except ValueError:
+            flash("Invalid date.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        existing = get_closed_dates(setting.schedule or "")
+        existing.add(parsed.strftime("%Y-%m-%d"))
+        setting.schedule = "\n".join(sorted(existing))
     db.session.commit()
     flash("Market settings updated.", "success")
     return redirect(url_for("admin_dashboard"))
