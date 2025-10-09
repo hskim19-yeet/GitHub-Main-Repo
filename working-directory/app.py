@@ -97,31 +97,27 @@ class Transaction(db.Model):
 class MarketSetting(db.Model):
     __tablename__ = "market_setting"
     id = db.Column(db.Integer, primary_key=True)
-    hours = db.Column(db.String(50), nullable=False, default="8 a.m.-5 p.m.")
+    hours = db.Column(db.String(50), nullable=False, default="8:00 AM-5:00 PM")
     schedule = db.Column(db.String(500), nullable=True, default="")
 
 
 def parse_time_string(value: str):
-    cleaned = value.strip().lower().replace(" ", "").replace(".", "")
-    if not cleaned:
+    value = value.strip()
+    if not value:
         raise ValueError
-    if cleaned.endswith(("am", "pm")) and ":" not in cleaned[:-2]:
-        cleaned = f"{cleaned[:-2]}:00{cleaned[-2:]}"
-    if cleaned.isdigit():
-        cleaned = f"{cleaned}:00"
-    for fmt in ("%H:%M", "%I:%M%p"):
-        try:
-            return datetime.strptime(cleaned, fmt).time()
-        except ValueError:
-            continue
-    raise ValueError
+    try:
+        return datetime.strptime(value, "%I:%M %p").time()
+    except ValueError:
+        return datetime.strptime(value, "%H:%M").time()
 
 
 def parse_market_hours(hours: str):
+    simple_hours = hours.split("-", 1)
+    if len(simple_hours) != 2:
+        return time(8, 0), time(17, 0)
     try:
-        start_str, end_str = hours.split("-", 1)
-        start_time = parse_time_string(start_str)
-        end_time = parse_time_string(end_str)
+        start_time = parse_time_string(simple_hours[0])
+        end_time = parse_time_string(simple_hours[1])
         return start_time, end_time
     except ValueError:
         return time(8, 0), time(17, 0)
@@ -130,53 +126,42 @@ def parse_market_hours(hours: str):
 def get_closed_dates(schedule: str):
     if not schedule:
         return set()
-    parts = schedule.replace(",", "\n").splitlines()
-    return {x.strip() for x in parts if x.strip()}
+    dates = set()
+    for piece in schedule.split(","):
+        cleaned = piece.strip()
+        if cleaned:
+            dates.add(cleaned)
+    return dates
 
 
 def get_market_context():
     setting = MarketSetting.query.first()
     if not setting:
-        setting = MarketSetting(hours="8 a.m.-5 p.m.", schedule="")
+        setting = MarketSetting(hours="8:00 AM-5:00 PM", schedule="")
         db.session.add(setting)
         db.session.commit()
     now = datetime.now()
     open_time, close_time = parse_market_hours(setting.hours or "")
     closed_dates = get_closed_dates(setting.schedule or "")
     today = now.strftime("%Y-%m-%d")
-    closed_today = today in closed_dates
-    after_midnight = open_time > close_time
     current_time = now.time()
-    time_open = False
-    formatted_dates = []
-    for date_str in sorted(closed_dates):
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            formatted_dates.append(f"{dt.strftime('%B')} {dt.day} {dt.year}")
-        except ValueError:
-            formatted_dates.append(date_str)
-    if after_midnight:
-        time_open = current_time >= open_time or current_time <= close_time
-    else:
-        time_open = open_time <= current_time <= close_time
-    market_open = time_open and not closed_today
-    def format_display_time(t: time):
-        formatted = t.strftime("%I:%M %p").lstrip("0")
-        body = formatted[:-3].rstrip()
-        suffix = formatted[-2:]
-        if body.endswith(":00"):
-            body = body[:-3]
-        suffix = "a.m." if suffix == "AM" else "p.m."
-        return f"{body} {suffix}"
+
+    market_open = open_time <= current_time <= close_time
+    if today in closed_dates:
+        market_open = False
+
+    formatted_dates = sorted(list(closed_dates))
+    display_hours = f"{open_time.strftime('%I:%M %p')} to {close_time.strftime('%I:%M %p')}"
+
     return {
         "setting": setting,
         "market_open": market_open,
-        "closed_today": closed_today,
+        "closed_today": today in closed_dates,
         "open_time": open_time,
         "close_time": close_time,
         "closed_dates": closed_dates,
         "closed_dates_formatted": formatted_dates,
-        "display_hours": f"{format_display_time(open_time)} to {format_display_time(close_time)}",
+        "display_hours": display_hours,
     }
 
 @app.route("/signup", methods=["GET", "POST"])
