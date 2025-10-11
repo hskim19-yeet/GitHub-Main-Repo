@@ -152,12 +152,12 @@ def get_market_context():
     now = datetime.now()
     weekday = now.strftime("%A")
     open_time, close_time = parse_market_hours(setting.hours or "")
-    today = now.strftime("%Y-%m-%d")
+    today = now.date()
     current_time = now.time()
 
     closures = ClosureDates.query.order_by(ClosureDates.closure_date.asc()).all()
-    closure_dates = [c.closure_date for c in closures] ##gets closure_date attribute of all instances of closures.
-
+    closure_dates = [closure.closure_date for closure in closures] ##gets closure_date attribute of all instances of closures.
+    
     open_days = (setting.open_days or "").split(",")
     market_open = (weekday in open_days) and (open_time <= current_time <= close_time)
 
@@ -166,9 +166,13 @@ def get_market_context():
 
   
     display_hours = f"{open_time.strftime('%H:%M')} to {close_time.strftime('%H:%M')}"
-    formatted_closures = [
-        {"date": c.closure_date.strftime("%m-%Y-%d"), "reason": c.reason or ""}
-        for c in closures
+    formatted_closures =[ ## list of dictionary of closures in the database
+        {
+            "id":closure.id,
+            "date": closure.closure_date.strftime("%m-%d-%Y"),
+            "reason": closure.reason or ""
+        }
+        for closure in closures
     ]
 
 
@@ -387,13 +391,13 @@ def add_closure():
     date_str = request.form.get("closure_date")
     reason = request.form.get("reason", "").strip()
     try:
-        closure_date = datetime.strptime(date_str, "%m-%y-%d").date()
-
+        closure_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        
     except ValueError:
         flash("Invalid date format.", "danger")
         return redirect(url_for("admin_dashboard"))
     
-    existing_closures = ClosureDates.query.filter_by(closure_date).first()
+    existing_closures = ClosureDates.query.filter_by(closure_date=closure_date).first()
     if existing_closures:
         flash(f"Closure already added.","warning")
         return redirect(url_for("admin_dashboard"))
@@ -404,14 +408,14 @@ def add_closure():
     flash(f"Added market closure for {closure_date}.", "success")
     return redirect(url_for("admin_dashboard"))
 
-@app.route("/admin/undo-closure/<int:closure_id>", methods = ["POST"])
+@app.route("/admin/undo-closure/<int:closure>", methods = ["POST"])
 @login_required
 @admin_required
-def undo_closure(closure_id):
-    closure = ClosureDates.query.get_or_404(closure_id)
-    db.session.delete(closure)
+def undo_closure(closure):
+    target_closure = ClosureDates.query.get_or_404(closure)
+    db.session.delete(target_closure)
     db.session.commit()
-    flash(f"Deleted closure on {closure.closure_date}.","success")
+    flash(f"Deleted closure on {target_closure.closure_date}.","success")
     return redirect(url_for("admin_dashboard"))
 
 

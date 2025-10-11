@@ -19,7 +19,7 @@
   {% else %}
   <div class="alert alert-warning d-flex justify-content-between align-items-center">
     <div>
-      Market closed. Next session starts at {{ market.open_time.strftime("%I:%M %p") }}.
+      Market closed. Please try again during market hours.
       {% if market.closed_today %}
       Today follows the scheduled market closure.
       {% endif %}
@@ -120,7 +120,7 @@
   }
   const marketConfig = {
     hours: "{{ market.setting.hours }}",
-    closedDates: {{ market.closed_dates|list|sort|tojson }}
+    closedDates: {{ market.closure_list|map(attribute="date")|list|tojson }}
   };
   function parseHours(value) {
     const parts = (value || "").split("-");

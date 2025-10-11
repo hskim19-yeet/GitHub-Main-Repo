@@ -17,7 +17,7 @@
 </div>
 {% else %}
 <div class="alert alert-warning">
-  Market closed. Next session starts at {{ market.open_time.strftime("%I:%M %p") }}.
+  Market is closed. Please try again during market hours.
   {% if market.closed_today %}
   Closed for scheduled date.
   {% endif %}

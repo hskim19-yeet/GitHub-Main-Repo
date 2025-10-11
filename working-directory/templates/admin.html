@@ -67,7 +67,7 @@
     </div>
     <div class = "card-body">
       <form action = "{{url_for('add_closure')}}" method="POST" class="row g-3 align-items-end">
-        <div class=""col-md-3">
+        <div class="col-md-3">
           <label for="closure_date" class="form-label">Closure Date</label>
           <input type="date" name="closure_date" id="closure_date" class="form-control" required>
 
@@ -95,16 +95,17 @@
             </tr>
           </thead>
           <tbody>
+            {% for closure in market.closure_list %}
             <tr>
               <td>{{ closure.date}}</td>
-              <td>{{ closure.reason if closure.reason else " "}}</td>
+              <td>{{ closure.reason }}</td>
               <td>
-                <form action = "{{ url_for('undo_closure', closure_id=closure.id) }}" method="POST">
+                <form action = "{{ url_for('undo_closure', closure=closure.id) }}" method="POST">
                   <button type = "submit" class="btn btn-sm btn-danger">Undo</button>
                 </form>
               </td>              
             </tr>
-            
+            {% endfor %}
           </tbody>
         </table>
         {% endif %}
