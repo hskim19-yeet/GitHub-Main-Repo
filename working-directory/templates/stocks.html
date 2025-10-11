@@ -83,30 +83,31 @@
 <!-- javascript for updating the prices -->
     <script>
         document.addEventListener("DOMContentLoaded", () => {
-            async function update_stock_prices() {
-                try {
-                    const response = await fetch("/update_stock_prices");
-                    const json_data = await response.json(); //gets the return jsonify from app.py and stores it to data.
-                
-                    //update current price column in db.
-
-                    document.querySelectorAll(".updated-price").forEach(cell => { //fetches the cells of updated price
-                        const symbol = cell.dataset.symbol; //json_data has the json {"TICKER": current price, ...}. data-symbol is the Ticker associated with the cell, data[symbol] is the value, or the price.
-                        if (json_data[symbol] !== undefined) { //matches symbols to the json data from the app.py
-                            cell.textContent = `$${json_data[symbol].toFixed(2)}`; //assigns the updated price for that symbol according to json we got from db.
-                        }
-                    });
-
-                } catch (error) {
-                    console.error("Error fetching prices:", error);
+    async function update_stock_prices() {
+        try {
+            const response = await fetch("/update_stock_prices");
+            const json_data = await response.json();
+            document.querySelectorAll(".updated-price").forEach(cell => {
+                const symbol = cell.dataset.symbol;
+                if (json_data[symbol] !== undefined) {
+                    cell.textContent = `$${json_data[symbol].toFixed(2)}`;
                 }
-            }
-            
-        update_stock_prices(); //calling the function that we just defined
-        
-        setInterval(update_stock_prices, 30000); //calling update_stock_prices every 30 seconds
-            
-        });
+            });
+        } catch (error) {
+            console.error("Error fetching prices:", error);
+        }
+    }
+
+    update_stock_prices();
+    let pollTimer = null;
+    function startPolling() {
+        const delay = document.visibilityState === 'visible' ? 15000 : 15000;
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(update_stock_prices, delay);
+    }
+    startPolling();
+    document.addEventListener('visibilitychange', startPolling);
+});
 
     </script>
 
