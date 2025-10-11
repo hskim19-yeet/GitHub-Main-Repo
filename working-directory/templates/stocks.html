@@ -18,7 +18,9 @@
                     <th>Stock Ticker</th>
                     <th>Company</th>
                     <th>Initial Price</th>
+                    <th>Current Price</th>
                     <th>Available Stocks</th>
+
                 </tr>
             </thead>
             <tbody>
@@ -28,7 +30,10 @@
                     <td>{{ stock.id }}</td>
                     <td>{{ stock.stock_ticker }}</td>
                     <td>{{ stock.company }}</td>
-                    <td>{{ stock.initial_price }}</td>
+                    <td>{{ '%.2f'|format(stock.initial_price) }}</td>
+                    <td class="updated-price" data-symbol="{{ stock.stock_ticker }}">
+                        ${{ '%.2f'|format(stock.current_price) }}
+                    </td>
                     <td>{{ stock.available_stocks }}</td>
                     
                 </tr>
@@ -67,4 +72,34 @@
         {% endif %}
     </div>
     
+<!-- javascript for updating the prices -->
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            async function update_stock_prices() {
+                try {
+                    const response = await fetch("/update_stock_prices");
+                    const json_data = await response.json(); //gets the return jsonify from app.py and stores it to data.
+                
+                    //update current price column in db.
+
+                    document.querySelectorAll(".updated-price").forEach(cell => { //fetches the cells of updated price
+                        const symbol = cell.dataset.symbol; //json_data has the json {"TICKER": current price, ...}. data-symbol is the Ticker associated with the cell, data[symbol] is the value, or the price.
+                        if (json_data[symbol] !== undefined) { //matches symbols to the json data from the app.py
+                            cell.textContent = `$${json_data[symbol].toFixed(2)}`; //assigns the updated price for that symbol according to json we got from db.
+                        }
+                    });
+
+                } catch (error) {
+                    console.error("Error fetching prices:", error);
+                }
+            }
+            
+        update_stock_prices(); //calling the function that we just defined
+        
+        setInterval(update_stock_prices, 30000); //calling update_stock_prices every 30 seconds
+            
+        });
+
+    </script>
+
     {% endblock %}

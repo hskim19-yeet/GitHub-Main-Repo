@@ -1,10 +1,11 @@
-from flask import Flask, render_template, redirect, url_for, flash, request
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from functools import wraps
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, time
+import random 
 
 app = Flask(__name__)
 
@@ -70,6 +71,7 @@ class Stock(db.Model):
     company = db.Column(db.String(120), unique=True, nullable=False)
     initial_price = db.Column(db.Float, nullable=False)
     available_stocks = db.Column(db.Integer, nullable=False)
+    current_price = db.Column(db.Float, nullable=True)
 
     orders = db.relationship("Order", backref="stock", lazy=True)
     portfolios = db.relationship("Portfolio", backref="stock", lazy=True)
@@ -175,6 +177,19 @@ def get_market_context():
         "closed_dates_formatted": formatted_dates,
         "display_hours": display_hours,
     }
+
+@app.route("/update_stock_prices")
+def update_stock_prices():
+    max_price = 600
+    stocks = Stock.query.all()
+
+    for stock in stocks:
+        new_price = round(random.uniform(0, max_price), 2)
+        stock.current_price = new_price
+
+    db.session.commit()
+    ## return JSON data like "AAPL": 300.00, "BASS": 199.90, etc.
+    return jsonify ({stock.stock_ticker: stock.current_price for stock in stocks})
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -514,6 +529,7 @@ def add_stock():
                       company=company,
                       initial_price=initial_price,
                       available_stocks=available_stocks,
+                      current_price = initial_price
                       )
 
     try:
