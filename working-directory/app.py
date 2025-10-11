@@ -103,6 +103,12 @@ class MarketSetting(db.Model):
     schedule = db.Column(db.String(500), nullable=True, default="")
     open_days = db.Column(db.String(100), nullable=False, default="Monday,Tuesday,Wednesday,Thursday,Friday")
 
+class ClosureDates(db.Model):
+    __tablename__ = "closure_dates"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    closure_date = db.Column(db.Date, nullable=False, unique=True)
+    reason = db.Column(db.String(255), nullable=True)
+
 def parse_time_string(value: str):
     value = value.strip()
     if not value:
@@ -142,42 +148,36 @@ def get_market_context():
         setting = MarketSetting(hours="08:00-17:00", schedule="")
         db.session.add(setting)
         db.session.commit()
+
     now = datetime.now()
     weekday = now.strftime("%A")
     open_time, close_time = parse_market_hours(setting.hours or "")
-    closed_dates = get_closed_dates(setting.schedule or "")
     today = now.strftime("%Y-%m-%d")
     current_time = now.time()
+
+    closures = ClosureDates.query.order_by(ClosureDates.closure_date.asc()).all()
+    closure_dates = [c.closure_date for c in closures] ##gets closure_date attribute of all instances of closures.
 
     open_days = (setting.open_days or "").split(",")
     market_open = (weekday in open_days) and (open_time <= current_time <= close_time)
 
-    if today in closed_dates:
+    if today in closure_dates:
         market_open = False
 
-    formatted_dates = []
-    for raw in sorted(closed_dates):
-        parsed = None
-        for fmt in ("%Y-%m-%d", "%B %d %Y", "%b %d %Y"):
-            try:
-                parsed = datetime.strptime(raw, fmt)
-                break
-            except ValueError:
-                continue
-        if parsed:
-            formatted_dates.append(f"{parsed.month} {parsed.day} {parsed.year}")
-        else:
-            formatted_dates.append(raw)
+  
     display_hours = f"{open_time.strftime('%H:%M')} to {close_time.strftime('%H:%M')}"
+    formatted_closures = [
+        {"date": c.closure_date.strftime("%m-%Y-%d"), "reason": c.reason or ""}
+        for c in closures
+    ]
+
 
     return {
         "setting": setting,
         "market_open": market_open,
-        "closed_today": today in closed_dates,
         "open_time": open_time,
         "close_time": close_time,
-        "closed_dates": closed_dates,
-        "closed_dates_formatted": formatted_dates,
+        "closure_list": formatted_closures,
         "display_hours": display_hours,
     }
 
@@ -379,6 +379,42 @@ def update_market_settings():
     db.session.commit()
     flash("Market settings updated.", "success")
     return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/add-closure", methods=["POST"])
+@login_required
+@admin_required
+def add_closure():
+    date_str = request.form.get("closure_date")
+    reason = request.form.get("reason", "").strip()
+    try:
+        closure_date = datetime.strptime(date_str, "%m-%y-%d").date()
+
+    except ValueError:
+        flash("Invalid date format.", "danger")
+        return redirect(url_for("admin_dashboard"))
+    
+    existing_closures = ClosureDates.query.filter_by(closure_date).first()
+    if existing_closures:
+        flash(f"Closure already added.","warning")
+        return redirect(url_for("admin_dashboard"))
+    
+    new_closure = ClosureDates(closure_date=closure_date, reason=reason)
+    db.session.add(new_closure)
+    db.session.commit()
+    flash(f"Added market closure for {closure_date}.", "success")
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/undo-closure/<int:closure_id>", methods = ["POST"])
+@login_required
+@admin_required
+def undo_closure(closure_id):
+    closure = ClosureDates.query.get_or_404(closure_id)
+    db.session.delete(closure)
+    db.session.commit()
+    flash(f"Deleted closure on {closure.closure_date}.","success")
+    return redirect(url_for("admin_dashboard"))
+
+
 
 @app.route("/admin/update-market-days", methods=["POST"])
 @login_required

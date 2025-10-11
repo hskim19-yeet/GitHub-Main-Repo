@@ -63,39 +63,52 @@
 
   <div class="card shadow border-0 mb-4">
     <div class="card-header bg-dark text-white">
-      <h5 class="mb-0">Change Market Closure</h5>
+      <h5 class="mb-0">Future Market Closures</h5>
     </div>
-    <div class="card-body">
-      <p class="mb-2">Enter market closure date.</p>
-      <form action="{{ url_for('update_market_settings') }}" method="POST" class="row g-3 align-items-end">
-        <input type="hidden" name="form_type" value="schedule">
-        <div class="col-md-3">
-          <label for="schedule_month" class="form-label">Month</label>
-          <input type="number" name="schedule_month" id="schedule_month" class="form-control" min="1" max="12" required>
+    <div class = "card-body">
+      <form action = "{{url_for('add_closure')}}" method="POST" class="row g-3 align-items-end">
+        <div class=""col-md-3">
+          <label for="closure_date" class="form-label">Closure Date</label>
+          <input type="date" name="closure_date" id="closure_date" class="form-control" required>
+
         </div>
-        <div class="col-md-3">
-          <label for="schedule_day" class="form-label">Day</label>
-          <input type="number" name="schedule_day" id="schedule_day" class="form-control" min="1" max="31" required>
-        </div>
-        <div class="col-md-3">
-          <label for="schedule_year" class="form-label">Year</label>
-          <input type="number" name="schedule_year" id="schedule_year" class="form-control" min="1900" required>
+        <div class ="col-md-5">
+          <label for="reason" class="form-label">Reason</label>
+          <input type="text" name="reason" id="reason" class="form-control">
+
         </div>
         <div class="col-auto">
-          <button type="submit" class="btn btn-warning text-dark">Add Date</button>
+          <button type="submit" class="btn btn-warning text-dark">Set</button>
         </div>
+
       </form>
+
       <div class="mt-4">
-        <h6 class="fw-semibold">Upcoming closures</h6>
-        {% if market.closed_dates_formatted %}
-        <ul class="list-group list-group-flush">
-          {% for date in market.closed_dates_formatted %}
-          <li class="list-group-item px-0">{{ date }}</li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="text-muted mb-0">No dates scheduled.</p>
+        <h6 class="fw-semibold">Future Closed Dates</h6>
+        {% if market.closure_list %}
+        <table class="table table-sm table-striped align-middle">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Reason</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ closure.date}}</td>
+              <td>{{ closure.reason if closure.reason else " "}}</td>
+              <td>
+                <form action = "{{ url_for('undo_closure', closure_id=closure.id) }}" method="POST">
+                  <button type = "submit" class="btn btn-sm btn-danger">Undo</button>
+                </form>
+              </td>              
+            </tr>
+            
+          </tbody>
+        </table>
         {% endif %}
+        
       </div>
     </div>
   </div>
