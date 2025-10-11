@@ -101,7 +101,7 @@ class MarketSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     hours = db.Column(db.String(50), nullable=False, default="08:00-17:00")
     schedule = db.Column(db.String(500), nullable=True, default="")
-
+    open_days = db.Column(db.String(100), nullable=False, default="Monday,Tuesday,Wednesday,Thursday,Friday")
 
 def parse_time_string(value: str):
     value = value.strip()
@@ -143,12 +143,15 @@ def get_market_context():
         db.session.add(setting)
         db.session.commit()
     now = datetime.now()
+    weekday = now.strftime("%A")
     open_time, close_time = parse_market_hours(setting.hours or "")
     closed_dates = get_closed_dates(setting.schedule or "")
     today = now.strftime("%Y-%m-%d")
     current_time = now.time()
 
-    market_open = open_time <= current_time <= close_time
+    open_days = (setting.open_days or "").split(",")
+    market_open = (weekday in open_days) and (open_time <= current_time <= close_time)
+
     if today in closed_dates:
         market_open = False
 
@@ -377,6 +380,20 @@ def update_market_settings():
     flash("Market settings updated.", "success")
     return redirect(url_for("admin_dashboard"))
 
+@app.route("/admin/update-market-days", methods=["POST"])
+@login_required
+@admin_required
+def update_market_days():
+    market_status = get_market_context()
+    setting = market_status["setting"]
+
+    checked_days = request.form.getlist("open_days")
+    setting.open_days = ",".join(checked_days)
+
+    db.session.commit()
+    flash("Market days updated.", "success")
+    return redirect(url_for("admin_dashboard"))
+
 
 @app.route("/orders", methods=["GET"])
 @login_required
@@ -501,7 +518,8 @@ def add_user(username, email, lastname, firstname, password):
 @login_required
 def stocks():
     stocks = Stock.query.all()
-    return render_template('stocks.html', stocks=stocks)
+    market = get_market_context()
+    return render_template('stocks.html', stocks=stocks, market=market)
 
 
 @app.route('/add_stock', methods=['POST'])

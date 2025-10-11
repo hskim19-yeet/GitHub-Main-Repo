@@ -11,7 +11,7 @@
         {% endif %}
         {% endwith %}
         <table class="table table-bordered">
-            <thead>
+            <thead class = "table-dark">
                 <tr>
                     
                     <th>ID</th>
@@ -20,7 +20,7 @@
                     <th>Initial Price</th>
                     <th>Current Price</th>
                     <th>Available Stocks</th>
-
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -35,7 +35,15 @@
                         ${{ '%.2f'|format(stock.current_price) }}
                     </td>
                     <td>{{ stock.available_stocks }}</td>
-                    
+                    <td>
+                        <form action="{{ url_for('add_order')}}" method="POST" class="d-flex justify-content-center align gap-2">
+                            <input type="hidden" name="stock_id" value="{{stock.id}}">
+                            <input type="number" name="quantity" class="form-control text-center" style="width: 80px; flex: 0 0 auto;" min="1" max = "{{stock.available_stocks}}" step="1" value="1" {% if not market.market_open%}disabled{%endif%}>
+                            <button type="submit" class="btn btn-success buy-button" {% if not market.market_open %}disabled{% endif %}>Buy</button>
+
+                        </form>
+
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
