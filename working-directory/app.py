@@ -932,6 +932,14 @@ def wallet():
     acct = CashAccount.query.filter_by(user_id=current_user.user_id).first()
     return render_template("wallet.html", acct=acct)
 
+@app.context_processor
+def display_wallet_balance():
+    from flask_login import current_user
+    if current_user.is_authenticated:
+        acct = CashAccount.query.filter_by(user_id=current_user.id).first()
+        if acct:
+            return {"wallet_balance": round(float(acct.current_balance), 2)}
+    return {"wallet_balance": None}
 
 if __name__ == "__main__":
     app.run(debug=True)

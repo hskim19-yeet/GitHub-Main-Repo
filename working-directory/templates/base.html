@@ -35,6 +35,17 @@
 
           <ul class="navbar-nav ms-auto">
             {% if current_user.is_authenticated %}
+            <li class="nav-item me-4">
+              <span class="navbar-text text-warning fw-semibold">
+                Wallet:
+              {% if wallet_balance is not none %}
+                ${{ '%.2f' |format(wallet_balance) }}
+              {% else %}
+                $0.00
+              {% endif %}
+              </span>
+            </li>
+
             <li class="nav-item">
               <span class="navbar-text me-3">
                 Hi, {{ current_user.username }}{% if current_user.is_admin %} (Admin){% endif %}
