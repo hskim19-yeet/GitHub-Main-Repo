@@ -114,6 +114,9 @@ class ClosureDates(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     closure_date = db.Column(db.Date, nullable=False, unique=True)
     reason = db.Column(db.String(255), nullable=True)
+    open_hour = db.Column(db.Integer, nullable=True)
+    close_hour = db.Column(db.Integer, nullable=True)
+    for_whole_day = db.Column(db.Boolean, nullable=False, default=True)
 
 
 def parse_time_string(value: str):
@@ -160,29 +163,48 @@ def get_market_context():
     weekday = now.strftime("%A")
     open_time, close_time = parse_market_hours(setting.hours or "")
     today = now.date()
+    current_hour = now.hour
     current_time = now.time()
 
-    closures = ClosureDates.query.order_by(
-        ClosureDates.closure_date.asc()).all()
-    # gets closure_date attribute of all instances of closures.
-    closure_dates = [closure.closure_date for closure in closures]
 
     open_days = (setting.open_days or "").split(",")
     market_open = (weekday in open_days) and (
         open_time <= current_time <= close_time)
 
-    if today in closure_dates:
-        market_open = False
+#check closures (whole day and partial day)
+    closed_today = ClosureDates.query.filter_by(closure_date=today).first()
+    if closed_today:
+        if closed_today.for_whole_day:
+            market_open = False
+        elif closed_today.open_hour is not None and closed_today.close_hour is not None:
+            market_open = closed_today.open_hour <= current_hour < closed_today.close_hour
+        else:
+            market_open = False
 
     display_hours = f"{open_time.strftime('%H:%M')} to {close_time.strftime('%H:%M')}"
-    formatted_closures = [  # list of dictionary of closures in the database
-        {
+
+    closures = ClosureDates.query.order_by(ClosureDates.closure_date.asc()).all()
+    
+    formatted_closures = []  # list of dictionary of closures in the database
+    for closure in closures:  
+        if closure.for_whole_day:
+            desc="Closed whole day"
+        elif closure.open_hour is not None and closure.close_hour is not None:
+            desc=f"{closure.open_hour:02d}:00 - {closure.close_hour:02d}:00"
+
+        else:
+            desc="Partially closed (unspecified hours)"
+
+        formatted_closures.append({
             "id": closure.id,
-            "date": closure.closure_date.strftime("%m-%d-%Y"),
-            "reason": closure.reason or ""
-        }
-        for closure in closures
-    ]
+            "date": closure.closure_date.strftime("%Y-%m-%d"),
+            "reason": closure.reason,
+            "description": desc,
+            "open_hour": closure.open_hour,
+            "close_hour": closure.close_hour,
+            "for_whole_day": closure.for_whole_day
+        })
+    
 
     return {
         "setting": setting,
@@ -408,6 +430,10 @@ def update_market_settings():
 def add_closure():
     date_str = request.form.get("closure_date")
     reason = request.form.get("reason", "").strip()
+    open_hour_int = request.form.get("open_hour")
+    close_hour_int = request.form.get("close_hour")
+    for_whole_day = request.form.get("for_whole_day") == "on"
+
     try:
         closure_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
@@ -417,11 +443,65 @@ def add_closure():
 
     existing_closures = ClosureDates.query.filter_by(
         closure_date=closure_date).first()
-    if existing_closures:
-        flash(f"Closure already added.", "warning")
-        return redirect(url_for("admin_dashboard"))
+    
 
-    new_closure = ClosureDates(closure_date=closure_date, reason=reason)
+
+    open_hour = None
+    close_hour = None
+
+    if not for_whole_day and open_hour_int and close_hour_int:
+        try:
+            open_hour = int(open_hour_int) # This will raise value error if time is not inputted.
+            close_hour = int(close_hour_int)
+        except ValueError:
+            flash("Invalid time format.", "danger")
+            return redirect(url_for("admin_dashboard"))
+
+    if existing_closures:
+        # if existing_closures but open and close times are different, allow editing.
+        
+        if (existing_closures.for_whole_day == for_whole_day and 
+            (existing_closures.open_hour != open_hour or existing_closures.close_hour != close_hour)):
+            open_hour = int(open_hour_int)
+            close_hour = int(close_hour_int)
+            existing_closures.for_whole_day = for_whole_day
+            existing_closures.open_hour = open_hour
+            existing_closures.close_hour = close_hour
+            db.session.commit()
+            flash(f"Updated market closure for {closure_date}.", "success")
+            return redirect(url_for("admin_dashboard"))
+        # if existing_closures but whole_day status is different, allow editing (allow partial market open).
+        if (existing_closures.for_whole_day != for_whole_day and not for_whole_day):
+            open_hour = int(open_hour_int)
+            close_hour = int(close_hour_int)
+            existing_closures.for_whole_day = for_whole_day
+            existing_closures.open_hour = open_hour
+            existing_closures.close_hour = close_hour
+            db.session.commit()
+            flash(f"Updated market closure for {closure_date}.", "success")
+            return redirect(url_for("admin_dashboard"))
+        # if existing_closures but whole_day status is different, allow editing (allow whole_day closure).
+        if (existing_closures.for_whole_day != for_whole_day and for_whole_day):
+            existing_closures.for_whole_day = for_whole_day
+            existing_closures.open_hour = None
+            existing_closures.close_hour = None
+            db.session.commit()
+            flash(f"Updated market closure for {closure_date}.", "success")
+            return redirect(url_for("admin_dashboard"))
+        
+        else:
+            flash(f"Closure already added.", "warning")
+            return redirect(url_for("admin_dashboard"))
+ 
+
+    new_closure = ClosureDates(
+        closure_date=closure_date, 
+        reason=reason,
+        for_whole_day=for_whole_day,
+        open_hour=open_hour,
+        close_hour=close_hour
+        
+    )
     db.session.add(new_closure)
     db.session.commit()
     flash(f"Added market closure for {closure_date}.", "success")

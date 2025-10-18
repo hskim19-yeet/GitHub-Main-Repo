@@ -67,11 +67,29 @@
     </div>
     <div class = "card-body">
       <form action = "{{url_for('add_closure')}}" method="POST" class="row g-3 align-items-end">
+        
+        <div class="col-md-2 d-flex align-items-center">
+          <div class="form-check mt-4">
+            <input class="form-check-input" type="checkbox" name="for_whole_day" id="for_whole_day" checked>
+            <label class="form-check-label" for="for_whole_day">Close Whole Day</label>
+          </div>
+        </div>
+        
         <div class="col-md-3">
           <label for="closure_date" class="form-label">Closure Date</label>
           <input type="date" name="closure_date" id="closure_date" class="form-control" required>
-
         </div>
+
+        <div class="col-md-2">
+          <label for="open_hour" class="form-label">Open Hour</label>
+          <input type="number" name="open_hour" id="open_hour" class="form-control">
+        </div>
+
+        <div class="col-md-2">
+          <label for="close_hour" class="form-label">Close Hour</label>
+          <input type="number" name="close_hour" id="close_hour" class="form-control">
+        </div>
+
         <div class ="col-md-5">
           <label for="reason" class="form-label">Reason</label>
           <input type="text" name="reason" id="reason" class="form-control">
@@ -90,6 +108,7 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>Partially Open</th>
               <th>Reason</th>
               <th>Action</th>
             </tr>
@@ -98,6 +117,7 @@
             {% for closure in market.closure_list %}
             <tr>
               <td>{{ closure.date}}</td>
+              <td>{{ closure.description}}</td>
               <td>{{ closure.reason }}</td>
               <td>
                 <form action = "{{ url_for('undo_closure', closure=closure.id) }}" method="POST">
@@ -205,4 +225,22 @@
     </div>
   </div>
 </div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const checkbox = document.getElementById("for_whole_day");
+    const start = document.getElementById("open_hour");
+    const end = document.getElementById("close_hour");
+
+    const toggleFields = () => {
+      const disabled = checkbox.checked;
+      start.disabled = disabled;
+      end.disabled = disabled;
+    };
+
+    checkbox.addEventListener("change", toggleFields);
+    toggleFields();
+  });
+</script>
+
 {% endblock %}
