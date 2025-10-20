@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+
+<div class="container mt-5">
+  <h1 class="mb-4">{{ user.username }}'s Portfolio</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if market.market_open %}
+  <div class="alert alert-success d-flex justify-content-between align-items-center">
+    <span>Market open until {{ market.close_time.strftime("%I:%M %p") }}</span>
+  </div>
+  {% else %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-center">
+    <div>
+      Market closed. Please try again during market hours.
+      {% if market.closed_today %}
+      Today follows the scheduled market closure.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <h2>Cash Account</h2>
+  {% if acct %}
+  <p><strong>Current Balance:</strong> ${{ '%.2f'|format(acct.current_balance) }}</p>
+  <form class="row g-2" onsubmit="adjustCash(event)">
+    <div class="col-auto">
+      <input id="cashAmount" type="number" step="0.01" class="form-control" placeholder="Amount" required>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-success" data-action="deposit">Deposit</button>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-warning" data-action="withdraw">Withdraw</button>
+    </div>
+  </form>
+  {% else %}
+  <p>No account yet. Deposit to create one.</p>
+  {% endif %}
+
+  <hr class="my-4">
+
+  <h2>Stock Positions</h2>
+  <div class="table-responsive">
+  <table class="table table-bordered align-middle">
+    <thead>
+      <tr>
+        <th>Stock Ticker</th>
+        <th>Quantity</th>
+        <th>Purchase Price</th>
+        <th>Current Price</th>
+        <th>Cost Basis</th>
+        <th>Market Value</th>
+        <th>Updated At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% if positions %}
+      {% for row in positions %}
+      {% set p = row.position %}
+      <tr>
+        <td>{{ p.stock.stock_ticker }} ({{ p.stock.company }})</td>
+        <td>{{ p.quantity }}</td>
+        <td>${{ '%.2f'|format(row.purchase_price) }}</td>
+        <td>${{ '%.2f'|format(row.current_price) }}</td>
+        <td>${{ '%.2f'|format(row.cost_basis) }}</td>
+        <td>${{ '%.2f'|format(row.market_value) }}</td>
+        <td>{{ p.updated_at.strftime("%Y-%m-%d %I:%M %p") if p.updated_at else "—" }}</td>
+        <td>
+          <form action="{{ url_for('sell_position', holding_id=p.holding_id) }}"
+                method="POST"
+                class="sell-form"
+                data-sell-form
+                data-current-price="{{ '%.2f'|format(row.current_price) }}"
+                data-symbol="{{ p.stock.stock_ticker }}"
+                data-purchase-price="{{ '%.2f'|format(row.purchase_price) }}">
+            <div class="input-group input-group-sm">
+              <input type="number"
+                     name="quantity"
+                     min="1"
+                     max="{{ p.quantity }}"
+                     class="form-control"
+                     placeholder="Quantity"
+                     required>
+              <button type="submit"
+                      class="btn btn-danger"
+                      data-market-toggle="trade"
+                      {% if not market.market_open %}disabled{% endif %}>
+                Sell
+              </button>
+            </div>
+            <div class="form-text mt-1 text-muted">
+              <span data-profit-label>Estimated Profit:</span>
+              <strong data-profit-display class="ms-1">$0.00</strong>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    {% else %}
+        <tr>
+          <td colspan="9" class="text-center text-muted py-4">No holdings yet. Add your first position to get started.</td>
+        </tr>
+    {% endif %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Add Position</h2>
+  <form onsubmit="addPosition(event)" class="row g-3">
+    <div class="col-md-4">
+      <label for="position_stock_id" class="form-label">Stock ID</label>
+      <input type="number" class="form-control" id="position_stock_id" required>
+    </div>
+    <div class="col-md-4">
+      <label for="position_quantity" class="form-label">Quantity</label>
+      <input type="number" class="form-control" id="position_quantity" required>
+    </div>
+    <div class="col-md-auto align-self-end">
+      <button type="submit" class="btn btn-primary" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Add Position</button>
+    </div>
+  </form>
+</div>
+
+<div class="modal fade" id="confirmSellModal" tabindex="-1" aria-labelledby="confirmSellLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmSellLabel">Confirm Sale</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-1">Sell <strong id="sellQuantityPreview">0</strong> share(s) of <strong id="sellSymbolPreview"></strong>?</p>
+        <p class="mb-0">Estimated proceeds: <strong id="sellTotalPreview">$0.00</strong></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmSellSubmit">Confirm Sell</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function adjustCash(event) {
+    event.preventDefault();
+    const amt = document.getElementById('cashAmount').value;
+    const submitter = event.submitter;
+    let action = submitter ? submitter.dataset.action : null;
+    if (!action && document.activeElement) {
+      action = document.activeElement.dataset ? document.activeElement.dataset.action : null;
+    }
+    if (!amt) {
+      return;
+    }
+    const numericAmount = Number(amt);
+    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+      return;
+    }
+    const normalizedAmount = numericAmount.toFixed(2);
+    if (action === 'deposit') {
+      window.location.href = `/add_cash/{{ user.user_id }}/${encodeURIComponent(normalizedAmount)}`;
+    } else if (action === 'withdraw') {
+      window.location.href = `/withdraw_cash/{{ user.user_id }}/${encodeURIComponent(normalizedAmount)}`;
+    }
+  }
+  function addPosition(event) {
+    event.preventDefault();
+    if (document.body.dataset.marketOpen === "0") {
+      return;
+    }
+    const id = document.getElementById('position_stock_id').value;
+    const qty = document.getElementById('position_quantity').value;
+    if (!id || !qty) {
+      return;
+    }
+    window.location.href = `/add_position/{{ user.user_id }}/${id}/${qty}`;
+  }
+  const marketConfig = {
+    hours: "{{ market.setting.hours }}",
+    closedDates: {{ market.closure_list|map(attribute="date")|list|tojson }}
+  };
+  function parseHours(value) {
+    const parts = (value || "").split("-");
+    if (parts.length !== 2) {
+      return { open: "8:00am", close: "5:00pm" };
+    }
+    return { open: parts[0].trim(), close: parts[1].trim() };
+  }
+  function minutesFrom(timeValue) {
+    let value = (timeValue || "").toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
+    if ((value.endsWith("am") || value.endsWith("pm")) && !value.includes(":")) {
+      value = `${value.slice(0, -2)}:00${value.slice(-2)}`;
+    }
+    if (/^\d{1,2}$/.test(value)) {
+      value = `${value}:00`;
+    }
+    const match = value.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
+    if (!match) {
+      return NaN;
+    }
+    let hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    const suffix = match[3];
+    if (suffix === "pm" && hour !== 12) {
+      hour += 12;
+    }
+    if (suffix === "am" && hour === 12) {
+      hour = 0;
+    }
+    return hour * 60 + minute;
+  }
+  function computeAllow() {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const schedule = parseHours(marketConfig.hours);
+    const openMinutes = minutesFrom(schedule.open);
+    const closeMinutes = minutesFrom(schedule.close);
+    const today = now.toISOString().slice(0, 10);
+    const closedByDate = marketConfig.closedDates.includes(today);
+    let within = false;
+    if (openMinutes <= closeMinutes) {
+      within = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+    } else {
+      within = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+    }
+    return within && !closedByDate;
+  }
+  function syncMarketButtons() {
+    const allow = computeAllow();
+    document.body.dataset.marketOpen = allow ? "1" : "0";
+    document.querySelectorAll('[data-market-toggle="trade"]').forEach((button) => {
+      if (allow) {
+        button.removeAttribute("disabled");
+      } else {
+        button.setAttribute("disabled", "disabled");
+      }
+    });
+  }
+  document.addEventListener("DOMContentLoaded", syncMarketButtons);
+  setInterval(syncMarketButtons, 60000);
+  function initPortfolioSellHints() {
+    const forms = document.querySelectorAll("[data-sell-form]");
+    forms.forEach((form) => {
+      const qtyInput = form.querySelector('input[name="quantity"]');
+      const display = form.querySelector("[data-profit-display]");
+      const label = form.querySelector("[data-profit-label]");
+      if (!qtyInput || !display || !label) {
+        return;
+      }
+      if (!qtyInput.value) {
+        qtyInput.value = Math.min(Number(qtyInput.getAttribute("max") || 1), 1);
+      }
+      const purchasePrice = parseFloat(form.dataset.purchasePrice || "0");
+      const currentPrice = parseFloat(form.dataset.currentPrice || "0");
+      const update = () => {
+        const qtyRaw = Number(qtyInput.value || 0);
+        const max = Number(qtyInput.getAttribute("max") || 0);
+        const qty = max ? Math.min(Math.max(qtyRaw, 0), max) : Math.max(qtyRaw, 0);
+        if (qty !== qtyRaw) {
+          qtyInput.value = qty;
+        }
+        const profit = (currentPrice - purchasePrice) * qty;
+        const prefix = profit >= 0 ? "Estimated Profit:" : "Estimated Loss:";
+        label.textContent = prefix;
+        display.textContent = `$${Math.abs(profit).toFixed(2)}`;
+        display.classList.toggle("text-success", profit > 0);
+        display.classList.toggle("text-danger", profit < 0);
+        display.classList.toggle("text-muted", profit === 0);
+      };
+      qtyInput.addEventListener("input", update);
+      update();
+    });
+  }
+  function initPortfolioSellConfirmations() {
+    const modalEl = document.getElementById("confirmSellModal");
+    const modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    const qtyPreview = document.getElementById("sellQuantityPreview");
+    const totalPreview = document.getElementById("sellTotalPreview");
+    const symbolPreview = document.getElementById("sellSymbolPreview");
+    let pendingForm = null;
+
+    document.querySelectorAll("[data-sell-form]").forEach((form) => {
+      const qtyInput = form.querySelector('input[name="quantity"]');
+      form.addEventListener("submit", (event) => {
+        if (form.dataset.confirmed === "1") {
+          form.dataset.confirmed = "0";
+          return;
+        }
+        event.preventDefault();
+        if (!qtyInput) {
+          return;
+        }
+        const quantity = Math.max(0, Number(qtyInput.value || 0));
+        if (!quantity) {
+          return;
+        }
+        const price = Number(form.dataset.currentPrice || "0");
+        const total = price * quantity;
+        if (qtyPreview) {
+          qtyPreview.textContent = quantity;
+        }
+        if (totalPreview) {
+          totalPreview.textContent = `$${total.toFixed(2)}`;
+        }
+        if (symbolPreview) {
+          symbolPreview.textContent = form.dataset.symbol || "";
+        }
+        pendingForm = form;
+        if (modal) {
+          modal.show();
+        } else {
+          form.dataset.confirmed = "1";
+          form.requestSubmit();
+          pendingForm = null;
+        }
+      });
+    });
+
+    if (modalEl && modal) {
+      modalEl.addEventListener("hidden.bs.modal", () => {
+        pendingForm = null;
+      });
+    }
+
+    const confirmBtn = document.getElementById("confirmSellSubmit");
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", () => {
+        if (pendingForm) {
+          pendingForm.dataset.confirmed = "1";
+          pendingForm.requestSubmit();
+          pendingForm = null;
+        }
+        if (modal) {
+          modal.hide();
+        }
+      });
+    }
+  }
+  document.addEventListener("DOMContentLoaded", initPortfolioSellHints);
+  document.addEventListener("DOMContentLoaded", initPortfolioSellConfirmations);
+</script>
+
+{% endblock %}

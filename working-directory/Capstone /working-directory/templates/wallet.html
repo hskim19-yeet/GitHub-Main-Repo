@@ -1,0 +1,75 @@
+{% extends "base.html" %} {% block title %}Wallet{% endblock %} {% block content
+%}
+
+<div class="container" style="max-width: 720px">
+  {% with messages = get_flashed_messages(with_categories=true) %} {% if
+  messages %} {% for category, message in messages %}
+  <div class="alert alert-{{ category }}">{{ message }}</div>
+  {% endfor %} {% endif %} {% endwith %}
+
+  <div class="card text-center mb-4">
+    <div class="card-header">WELCOME TO YOUR WALLET</div>
+    <div class="card-body">
+      <h5 class="card-title">
+        ${{ ('%.2f'|format(acct.current_balance)) if acct else '0.00' }}
+      </h5>
+      <p class="card-text">This is your Buying Power.</p>
+    </div>
+    <div class="card-footer text-body-secondary">
+      {{ current_user.username }}
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Deposit</h5>
+          <form method="post" action="{{ url_for('wallet_deposit') }}">
+            <div class="mb-3">
+              <label class="form-label">Amount</label>
+              <input
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                class="form-control"
+                required
+              />
+            </div>
+            <button class="btn btn-success w-100" type="submit">Deposit</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Withdraw</h5>
+          <form method="post" action="{{ url_for('wallet_withdraw') }}">
+            <div class="mb-3">
+              <label class="form-label">Amount</label>
+              <input
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                class="form-control"
+                required
+              />
+            </div>
+            <button class="btn btn-warning w-100" type="submit">
+              Withdraw
+            </button>
+          </form>
+          <small class="text-muted"
+            >You can’t withdraw more than your balance.</small
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
