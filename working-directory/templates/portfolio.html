@@ -35,10 +35,10 @@
       <input id="cashAmount" type="number" step="0.01" class="form-control" placeholder="Amount" required>
     </div>
     <div class="col-auto">
-      <button type="submit" class="btn btn-success" onclick="actionType='deposit'">Deposit</button>
+      <button type="submit" class="btn btn-success" data-action="deposit">Deposit</button>
     </div>
     <div class="col-auto">
-      <button type="submit" class="btn btn-warning" onclick="actionType='withdraw'">Withdraw</button>
+      <button type="submit" class="btn btn-warning" data-action="withdraw">Withdraw</button>
     </div>
   </form>
   {% else %}
@@ -48,33 +48,71 @@
   <hr class="my-4">
 
   <h2>Stock Positions</h2>
-  <table class="table table-bordered">
+  <div class="table-responsive">
+  <table class="table table-bordered align-middle">
     <thead>
       <tr>
-        <th>Holding ID</th>
         <th>Stock Ticker</th>
         <th>Quantity</th>
+        <th>Purchase Price</th>
+        <th>Current Price</th>
+        <th>Cost Basis</th>
+        <th>Market Value</th>
         <th>Updated At</th>
         <th>Actions</th>
       </tr>
     </thead>
     <tbody>
-      {% for p in positions %}
+    {% if positions %}
+      {% for row in positions %}
+      {% set p = row.position %}
       <tr>
-        <td>{{ p.holding_id }}</td>
         <td>{{ p.stock.stock_ticker }} ({{ p.stock.company }})</td>
         <td>{{ p.quantity }}</td>
-        <td>{{ p.updated_at }}</td>
+        <td>${{ '%.2f'|format(row.purchase_price) }}</td>
+        <td>${{ '%.2f'|format(row.current_price) }}</td>
+        <td>${{ '%.2f'|format(row.cost_basis) }}</td>
+        <td>${{ '%.2f'|format(row.market_value) }}</td>
+        <td>{{ p.updated_at.strftime("%Y-%m-%d %I:%M %p") if p.updated_at else "—" }}</td>
         <td>
-          <form action="{{ url_for('sell_position', holding_id=p.holding_id) }}" method="POST" class="d-flex">
-            <input type="number" name="quantity" min="1" max="{{ p.quantity }}" class="form-control form-control-sm me-2" placeholder="Quantity" required>
-            <button type="submit" class="btn btn-danger btn-sm" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Sell</button>
+          <form action="{{ url_for('sell_position', holding_id=p.holding_id) }}"
+                method="POST"
+                class="sell-form"
+                data-sell-form
+                data-current-price="{{ '%.2f'|format(row.current_price) }}"
+                data-symbol="{{ p.stock.stock_ticker }}"
+                data-purchase-price="{{ '%.2f'|format(row.purchase_price) }}">
+            <div class="input-group input-group-sm">
+              <input type="number"
+                     name="quantity"
+                     min="1"
+                     max="{{ p.quantity }}"
+                     class="form-control"
+                     placeholder="Quantity"
+                     required>
+              <button type="submit"
+                      class="btn btn-danger"
+                      data-market-toggle="trade"
+                      {% if not market.market_open %}disabled{% endif %}>
+                Sell
+              </button>
+            </div>
+            <div class="form-text mt-1 text-muted">
+              <span data-profit-label>Estimated Profit:</span>
+              <strong data-profit-display class="ms-1">$0.00</strong>
+            </div>
           </form>
         </td>
       </tr>
       {% endfor %}
+    {% else %}
+        <tr>
+          <td colspan="9" class="text-center text-muted py-4">No holdings yet. Add your first position to get started.</td>
+        </tr>
+    {% endif %}
     </tbody>
   </table>
+  </div>
 
   <h2>Add Position</h2>
   <form onsubmit="addPosition(event)" class="row g-3">
@@ -92,18 +130,46 @@
   </form>
 </div>
 
+<div class="modal fade" id="confirmSellModal" tabindex="-1" aria-labelledby="confirmSellLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmSellLabel">Confirm Sale</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-1">Sell <strong id="sellQuantityPreview">0</strong> share(s) of <strong id="sellSymbolPreview"></strong>?</p>
+        <p class="mb-0">Estimated proceeds: <strong id="sellTotalPreview">$0.00</strong></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmSellSubmit">Confirm Sell</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-  let actionType = '';
   function adjustCash(event) {
     event.preventDefault();
     const amt = document.getElementById('cashAmount').value;
+    const submitter = event.submitter;
+    let action = submitter ? submitter.dataset.action : null;
+    if (!action && document.activeElement) {
+      action = document.activeElement.dataset ? document.activeElement.dataset.action : null;
+    }
     if (!amt) {
       return;
     }
-    if (actionType === 'deposit') {
-      window.location.href = `/add_cash/{{ user.user_id }}/${amt}`;
-    } else if (actionType === 'withdraw') {
-      window.location.href = `/withdraw_cash/{{ user.user_id }}/${amt}`;
+    const numericAmount = Number(amt);
+    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+      return;
+    }
+    const normalizedAmount = numericAmount.toFixed(2);
+    if (action === 'deposit') {
+      window.location.href = `/add_cash/{{ user.user_id }}/${encodeURIComponent(normalizedAmount)}`;
+    } else if (action === 'withdraw') {
+      window.location.href = `/withdraw_cash/{{ user.user_id }}/${encodeURIComponent(normalizedAmount)}`;
     }
   }
   function addPosition(event) {
@@ -181,6 +247,106 @@
   }
   document.addEventListener("DOMContentLoaded", syncMarketButtons);
   setInterval(syncMarketButtons, 60000);
+  function initPortfolioSellHints() {
+    const forms = document.querySelectorAll("[data-sell-form]");
+    forms.forEach((form) => {
+      const qtyInput = form.querySelector('input[name="quantity"]');
+      const display = form.querySelector("[data-profit-display]");
+      const label = form.querySelector("[data-profit-label]");
+      if (!qtyInput || !display || !label) {
+        return;
+      }
+      if (!qtyInput.value) {
+        qtyInput.value = Math.min(Number(qtyInput.getAttribute("max") || 1), 1);
+      }
+      const purchasePrice = parseFloat(form.dataset.purchasePrice || "0");
+      const currentPrice = parseFloat(form.dataset.currentPrice || "0");
+      const update = () => {
+        const qtyRaw = Number(qtyInput.value || 0);
+        const max = Number(qtyInput.getAttribute("max") || 0);
+        const qty = max ? Math.min(Math.max(qtyRaw, 0), max) : Math.max(qtyRaw, 0);
+        if (qty !== qtyRaw) {
+          qtyInput.value = qty;
+        }
+        const profit = (currentPrice - purchasePrice) * qty;
+        const prefix = profit >= 0 ? "Estimated Profit:" : "Estimated Loss:";
+        label.textContent = prefix;
+        display.textContent = `$${Math.abs(profit).toFixed(2)}`;
+        display.classList.toggle("text-success", profit > 0);
+        display.classList.toggle("text-danger", profit < 0);
+        display.classList.toggle("text-muted", profit === 0);
+      };
+      qtyInput.addEventListener("input", update);
+      update();
+    });
+  }
+  function initPortfolioSellConfirmations() {
+    const modalEl = document.getElementById("confirmSellModal");
+    const modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    const qtyPreview = document.getElementById("sellQuantityPreview");
+    const totalPreview = document.getElementById("sellTotalPreview");
+    const symbolPreview = document.getElementById("sellSymbolPreview");
+    let pendingForm = null;
+
+    document.querySelectorAll("[data-sell-form]").forEach((form) => {
+      const qtyInput = form.querySelector('input[name="quantity"]');
+      form.addEventListener("submit", (event) => {
+        if (form.dataset.confirmed === "1") {
+          form.dataset.confirmed = "0";
+          return;
+        }
+        event.preventDefault();
+        if (!qtyInput) {
+          return;
+        }
+        const quantity = Math.max(0, Number(qtyInput.value || 0));
+        if (!quantity) {
+          return;
+        }
+        const price = Number(form.dataset.currentPrice || "0");
+        const total = price * quantity;
+        if (qtyPreview) {
+          qtyPreview.textContent = quantity;
+        }
+        if (totalPreview) {
+          totalPreview.textContent = `$${total.toFixed(2)}`;
+        }
+        if (symbolPreview) {
+          symbolPreview.textContent = form.dataset.symbol || "";
+        }
+        pendingForm = form;
+        if (modal) {
+          modal.show();
+        } else {
+          form.dataset.confirmed = "1";
+          form.requestSubmit();
+          pendingForm = null;
+        }
+      });
+    });
+
+    if (modalEl && modal) {
+      modalEl.addEventListener("hidden.bs.modal", () => {
+        pendingForm = null;
+      });
+    }
+
+    const confirmBtn = document.getElementById("confirmSellSubmit");
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", () => {
+        if (pendingForm) {
+          pendingForm.dataset.confirmed = "1";
+          pendingForm.requestSubmit();
+          pendingForm = null;
+        }
+        if (modal) {
+          modal.hide();
+        }
+      });
+    }
+  }
+  document.addEventListener("DOMContentLoaded", initPortfolioSellHints);
+  document.addEventListener("DOMContentLoaded", initPortfolioSellConfirmations);
 </script>
 
 {% endblock %}

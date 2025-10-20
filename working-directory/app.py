@@ -5,11 +5,22 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from functools import wraps
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, time
+import os
 import random
+from sqlalchemy import inspect, text
 
-app = Flask(__name__)
+app = Flask(__name__, instance_relative_config=True)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
+db_uri = (
+    os.environ.get("SQLALCHEMY_DATABASE_URI")
+    or os.environ.get("DATABASE_URL")
+)
+if not db_uri:
+    os.makedirs(app.instance_path, exist_ok=True)
+    default_db_path = os.path.join(app.instance_path, "stockcraft.db")
+    db_uri = f"sqlite:///{default_db_path}"
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -171,7 +182,6 @@ def get_market_context():
     market_open = (weekday in open_days) and (
         open_time <= current_time <= close_time)
 
-#check closures (whole day and partial day)
     closed_today = ClosureDates.query.filter_by(closure_date=today).first()
     if closed_today:
         if closed_today.for_whole_day:
@@ -185,7 +195,7 @@ def get_market_context():
 
     closures = ClosureDates.query.order_by(ClosureDates.closure_date.asc()).all()
     
-    formatted_closures = []  # list of dictionary of closures in the database
+    formatted_closures = []
     for closure in closures:  
         if closure.for_whole_day:
             desc="Closed whole day"
@@ -233,9 +243,11 @@ def update_stock_prices():
         new_price = price * (1.0 + pct)
         new_price = max(0.01, round(new_price, 2))
         stock.current_price = new_price
+        new_price_decimal = to_decimal(new_price)
+        for pos in stock.portfolios:
+            pos.current_price = new_price_decimal
 
     db.session.commit()
-    # return JSON data like "AAPL": 300.00, "BASS": 199.90, etc.
     return jsonify({stock.stock_ticker: stock.current_price for stock in stocks})
 
 
@@ -451,15 +463,13 @@ def add_closure():
 
     if not for_whole_day and open_hour_int and close_hour_int:
         try:
-            open_hour = int(open_hour_int) # This will raise value error if time is not inputted.
+            open_hour = int(open_hour_int)
             close_hour = int(close_hour_int)
         except ValueError:
             flash("Invalid time format.", "danger")
             return redirect(url_for("admin_dashboard"))
 
     if existing_closures:
-        # if existing_closures but open and close times are different, allow editing.
-        
         if (existing_closures.for_whole_day == for_whole_day and 
             (existing_closures.open_hour != open_hour or existing_closures.close_hour != close_hour)):
             open_hour = int(open_hour_int)
@@ -470,7 +480,6 @@ def add_closure():
             db.session.commit()
             flash(f"Updated market closure for {closure_date}.", "success")
             return redirect(url_for("admin_dashboard"))
-        # if existing_closures but whole_day status is different, allow editing (allow partial market open).
         if (existing_closures.for_whole_day != for_whole_day and not for_whole_day):
             open_hour = int(open_hour_int)
             close_hour = int(close_hour_int)
@@ -480,7 +489,6 @@ def add_closure():
             db.session.commit()
             flash(f"Updated market closure for {closure_date}.", "success")
             return redirect(url_for("admin_dashboard"))
-        # if existing_closures but whole_day status is different, allow editing (allow whole_day closure).
         if (existing_closures.for_whole_day != for_whole_day and for_whole_day):
             existing_closures.for_whole_day = for_whole_day
             existing_closures.open_hour = None
@@ -573,12 +581,13 @@ def add_order():
             flash("Not enough available shares.", "danger")
             return redirect(url_for("orders"))
 
-        price = Decimal(str(stock.current_price or 0))
+        price_source = stock.current_price if stock.current_price is not None else stock.initial_price
+        price = to_decimal(price_source)
         if price <= 0:
             flash("Invalid stock price.", "danger")
             return redirect(url_for("orders"))
 
-        total_cost = (price * Decimal(quantity)).quantize(Decimal("0.01"))
+        total_cost = (price * Decimal(quantity)).quantize(TWO_PLACES)
 
         acct = CashAccount.query.filter_by(user_id=user_id).first()
         if not acct:
@@ -587,12 +596,12 @@ def add_order():
             db.session.add(acct)
             db.session.flush()
 
-        if Decimal(str(acct.current_balance)) < total_cost:
+        if to_decimal(acct.current_balance) < total_cost:
             flash("Insufficient funds.", "danger")
             return redirect(url_for("orders"))
 
         acct.current_balance = (
-            Decimal(str(acct.current_balance)) - total_cost).quantize(Decimal("0.01"))
+            to_decimal(acct.current_balance) - total_cost).quantize(TWO_PLACES)
         stock.available_stocks = stock.available_stocks - quantity
 
         t = Transaction(order_id=None, user_id=user_id,
@@ -602,11 +611,21 @@ def add_order():
         pos = Portfolio.query.filter_by(
             user_id=user_id, stock_id=stock_id).first()
         if pos:
-            pos.quantity = pos.quantity + quantity
+            existing_qty = pos.quantity
+            new_total_qty = existing_qty + quantity
+            previous_avg = to_decimal(pos.purchase_price)
+            previous_cost = (previous_avg * Decimal(existing_qty)).quantize(TWO_PLACES)
+            new_cost = (price * Decimal(quantity)).quantize(TWO_PLACES)
+            combined_cost = (previous_cost + new_cost).quantize(TWO_PLACES)
+            pos.quantity = new_total_qty
+            pos.purchase_price = (combined_cost / Decimal(new_total_qty)).quantize(TWO_PLACES)
         else:
             pos = Portfolio(user_id=user_id, stock_id=stock_id,
-                            quantity=quantity)
+                            quantity=quantity,
+                            purchase_price=price,
+                            current_price=price)
             db.session.add(pos)
+        pos.current_price = price
 
         db.session.commit()
         flash(
@@ -738,6 +757,8 @@ class Portfolio(db.Model):
         "user.user_id"), nullable=False)
     stock_id = db.Column(db.Integer, db.ForeignKey("stock.id"), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
+    purchase_price = db.Column(db.Numeric(14, 2), nullable=False, default=Decimal("0.00"))
+    current_price = db.Column(db.Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     updated_at = db.Column(
         db.TIMESTAMP,
         server_default=db.func.current_timestamp(),
@@ -749,8 +770,57 @@ class Portfolio(db.Model):
         "user_id", "stock_id", name="uq_portfolio_user_stock"),)
 
 
+TWO_PLACES = Decimal("0.01")
+
+
+def to_decimal(value, default=Decimal("0.00")) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
+
+
+def ensure_portfolio_price_columns():
+    inspector = inspect(db.engine)
+    columns = {col["name"] for col in inspector.get_columns("portfolio")}
+    dialect = db.engine.dialect.name
+    numeric_type = "NUMERIC(14, 2)" if dialect == "sqlite" else "DECIMAL(14,2)"
+    alter_statements = []
+    if "purchase_price" not in columns:
+        alter_statements.append(
+            f"ALTER TABLE portfolio ADD COLUMN purchase_price {numeric_type} NOT NULL DEFAULT 0"
+        )
+    if "current_price" not in columns:
+        alter_statements.append(
+            f"ALTER TABLE portfolio ADD COLUMN current_price {numeric_type} NOT NULL DEFAULT 0"
+        )
+    if alter_statements:
+        with db.engine.begin() as conn:
+            for statement in alter_statements:
+                conn.execute(text(statement))
+
+    portfolios = Portfolio.query.all()
+    updated = False
+    for pos in portfolios:
+        stock = Stock.query.get(pos.stock_id)
+        if not stock:
+            continue
+        latest_price = to_decimal(
+            stock.current_price if stock.current_price is not None else stock.initial_price
+        )
+        if not pos.purchase_price or to_decimal(pos.purchase_price) <= Decimal("0.00"):
+            pos.purchase_price = latest_price
+            updated = True
+        if not pos.current_price or to_decimal(pos.current_price) != latest_price:
+            pos.current_price = latest_price
+            updated = True
+    if updated:
+        db.session.commit()
+
+
 with app.app_context():
     db.create_all()
+    ensure_portfolio_price_columns()
     setting = MarketSetting.query.first()
     if not setting:
         setting = MarketSetting(hours="08:00-17:00", schedule="")
@@ -770,36 +840,75 @@ def portfolio(user_id):
     user = User.query.get_or_404(user_id)
     acct = CashAccount.query.filter_by(user_id=user_id).first()
     positions = Portfolio.query.filter_by(user_id=user_id).all()
+    totals = {
+        "cost": Decimal("0.00"),
+        "value": Decimal("0.00"),
+    }
+    detailed_positions = []
+    for pos in positions:
+        purchase_price = to_decimal(pos.purchase_price)
+        current_price = to_decimal(pos.current_price if pos.current_price is not None else pos.stock.current_price)
+        cost_basis = (purchase_price * Decimal(pos.quantity)).quantize(TWO_PLACES)
+        market_value = (current_price * Decimal(pos.quantity)).quantize(TWO_PLACES)
+        gain = (market_value - cost_basis).quantize(TWO_PLACES)
+        totals["cost"] += cost_basis
+        totals["value"] += market_value
+        detailed_positions.append(
+            {
+                "position": pos,
+                "purchase_price": purchase_price.quantize(TWO_PLACES),
+                "current_price": current_price.quantize(TWO_PLACES),
+                "cost_basis": cost_basis,
+                "market_value": market_value,
+                "gain": gain,
+            }
+        )
+    totals = {key: value.quantize(TWO_PLACES) for key, value in totals.items()}
+    totals["gain"] = (totals["value"] - totals["cost"]).quantize(TWO_PLACES)
     market = get_market_context()
-    return render_template("portfolio.html", user=user, acct=acct, positions=positions, market=market)
+    return render_template(
+        "portfolio.html",
+        user=user,
+        acct=acct,
+        positions=detailed_positions,
+        totals=totals,
+        market=market,
+    )
 
 
-@app.route('/add_cash/<int:user_id>/<float:amount>')
+@app.route('/add_cash/<int:user_id>/<amount>')
 def add_cash(user_id, amount):
-    if amount <= 0:
+    amount_decimal = to_decimal(amount).quantize(TWO_PLACES)
+    if amount_decimal <= 0:
         flash('Amount must be greater than $0.00.', 'error')
         return redirect(url_for('portfolio', user_id=user_id))
     acct = CashAccount.query.filter_by(user_id=user_id).first()
     if not acct:
-        acct = CashAccount(user_id=user_id, current_balance=amount)
+        acct = CashAccount(user_id=user_id, current_balance=amount_decimal)
         db.session.add(acct)
     else:
-        acct.current_balance = acct.current_balance + amount
+        current_balance = to_decimal(acct.current_balance).quantize(TWO_PLACES)
+        acct.current_balance = (current_balance + amount_decimal).quantize(TWO_PLACES)
     db.session.commit()
-    flash(f'Added ${amount:.2f} to cash account.', 'success')
+    flash(f'Added ${amount_decimal:.2f} to cash account.', 'success')
     return redirect(url_for('portfolio', user_id=user_id))
 
 
-@app.route('/withdraw_cash/<int:user_id>/<float:amount>')
+@app.route('/withdraw_cash/<int:user_id>/<amount>')
 def withdraw_cash(user_id, amount):
-    if amount <= 0:
+    amount_decimal = to_decimal(amount).quantize(TWO_PLACES)
+    if amount_decimal <= 0:
         flash('Amount must be greater than $0.00.', 'error')
         return redirect(url_for('portfolio', user_id=user_id))
     acct = CashAccount.query.filter_by(user_id=user_id).first()
-    if acct and acct.current_balance >= amount:
-        acct.current_balance = acct.current_balance - amount
+    if acct:
+        current_balance = to_decimal(acct.current_balance).quantize(TWO_PLACES)
+    else:
+        current_balance = None
+    if acct and current_balance is not None and current_balance >= amount_decimal:
+        acct.current_balance = (current_balance - amount_decimal).quantize(TWO_PLACES)
         db.session.commit()
-        flash(f'Withdrew ${amount:.2f} from cash account.', 'success')
+        flash(f'Withdrew ${amount_decimal:.2f} from cash account.', 'success')
     else:
         flash('Insufficient funds or no account.', 'error')
     return redirect(url_for('portfolio', user_id=user_id))
@@ -831,12 +940,13 @@ def add_position(user_id, stock_id, quantity):
             flash("Not enough available shares.", "danger")
             return redirect(url_for('portfolio', user_id=user_id))
 
-        price = Decimal(str(stock.current_price or 0))
+        price_source = stock.current_price if stock.current_price is not None else stock.initial_price
+        price = to_decimal(price_source)
         if price <= 0:
             flash("Invalid stock price.", "danger")
             return redirect(url_for('portfolio', user_id=user_id))
 
-        total_cost = (price * Decimal(quantity)).quantize(Decimal("0.01"))
+        total_cost = (price * Decimal(quantity)).quantize(TWO_PLACES)
 
         acct = CashAccount.query.filter_by(user_id=user_id).first()
         if not acct:
@@ -845,12 +955,12 @@ def add_position(user_id, stock_id, quantity):
             db.session.add(acct)
             db.session.flush()
 
-        if Decimal(str(acct.current_balance)) < total_cost:
+        if to_decimal(acct.current_balance) < total_cost:
             flash("Insufficient funds.", "danger")
             return redirect(url_for('portfolio', user_id=user_id))
 
         acct.current_balance = (
-            Decimal(str(acct.current_balance)) - total_cost).quantize(Decimal("0.01"))
+            to_decimal(acct.current_balance) - total_cost).quantize(TWO_PLACES)
         stock.available_stocks = stock.available_stocks - quantity
 
         t = Transaction(order_id=None, user_id=user_id,
@@ -860,11 +970,21 @@ def add_position(user_id, stock_id, quantity):
         pos = Portfolio.query.filter_by(
             user_id=user_id, stock_id=stock_id).first()
         if pos:
-            pos.quantity = pos.quantity + quantity
+            existing_qty = pos.quantity
+            new_total_qty = existing_qty + quantity
+            previous_avg = to_decimal(pos.purchase_price)
+            previous_cost = (previous_avg * Decimal(existing_qty)).quantize(TWO_PLACES)
+            new_cost = (price * Decimal(quantity)).quantize(TWO_PLACES)
+            combined_cost = (previous_cost + new_cost).quantize(TWO_PLACES)
+            pos.quantity = new_total_qty
+            pos.purchase_price = (combined_cost / Decimal(new_total_qty)).quantize(TWO_PLACES)
         else:
             pos = Portfolio(user_id=user_id, stock_id=stock_id,
-                            quantity=quantity)
+                            quantity=quantity,
+                            purchase_price=price,
+                            current_price=price)
             db.session.add(pos)
+        pos.current_price = price
 
         db.session.commit()
         flash(
@@ -900,12 +1020,13 @@ def sell_position(holding_id):
             flash("Stock not found.", "danger")
             return redirect(url_for("portfolio", user_id=current_user.user_id))
 
-        price = Decimal(str(stock.current_price or 0))
+        price_source = stock.current_price if stock.current_price is not None else stock.initial_price
+        price = to_decimal(price_source)
         if price <= 0:
             flash("Invalid stock price.", "danger")
             return redirect(url_for("portfolio", user_id=current_user.user_id))
 
-        proceeds = (price * Decimal(quantity)).quantize(Decimal("0.01"))
+        proceeds = (price * Decimal(quantity)).quantize(TWO_PLACES)
 
         acct = CashAccount.query.filter_by(
             user_id=current_user.user_id).first()
@@ -916,7 +1037,7 @@ def sell_position(holding_id):
             db.session.flush()
 
         acct.current_balance = (
-            Decimal(str(acct.current_balance)) + proceeds).quantize(Decimal("0.01"))
+            to_decimal(acct.current_balance) + proceeds).quantize(TWO_PLACES)
         stock.available_stocks = stock.available_stocks + quantity
 
         transaction = Transaction(
@@ -926,6 +1047,8 @@ def sell_position(holding_id):
         pos.quantity = pos.quantity - quantity
         if pos.quantity == 0:
             db.session.delete(pos)
+        else:
+            pos.current_price = price
 
         db.session.commit()
         flash(

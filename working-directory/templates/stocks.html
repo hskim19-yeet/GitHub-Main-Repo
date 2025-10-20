@@ -25,22 +25,39 @@
             </thead>
             <tbody>
                 {% for stock in stocks %}
+                {% set display_price = stock.current_price if stock.current_price is not none else stock.initial_price %}
                 <tr>
-                     <!-- changed user.id to user.user_id-->
                     <td>{{ stock.id }}</td>
                     <td>{{ stock.stock_ticker }}</td>
                     <td>{{ stock.company }}</td>
                     <td>{{ '%.2f'|format(stock.initial_price) }}</td>
-                    <td class="updated-price" data-symbol="{{ stock.stock_ticker }}">
-                        ${{ '%.2f'|format(stock.current_price) }}
+                    <td class="updated-price" data-symbol="{{ stock.stock_ticker }}" data-price="{{ '%.2f'|format(display_price if display_price is not none else 0) }}">
+                        ${{ '%.2f'|format(display_price if display_price is not none else 0) }}
                     </td>
                     <td>{{ stock.available_stocks }}</td>
                     <td>
-                        <form action="{{ url_for('add_order')}}" method="POST" class="d-flex justify-content-center align gap-2">
+                        <form action="{{ url_for('add_order')}}"
+                              method="POST"
+                              class="d-flex flex-column align-items-center gap-2"
+                              data-buy-form
+                              data-symbol="{{ stock.stock_ticker }}"
+                              data-current-price="{{ '%.2f'|format(display_price if display_price is not none else 0) }}">
                             <input type="hidden" name="stock_id" value="{{stock.id}}">
-                            <input type="number" name="quantity" class="form-control text-center" style="width: 80px; flex: 0 0 auto;" min="1" max = "{{stock.available_stocks}}" step="1" value="1" {% if not market.market_open%}disabled{%endif%}>
-                            <button type="submit" class="btn btn-success buy-button" {% if not market.market_open %}disabled{% endif %}>Buy</button>
-
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="number"
+                                       name="quantity"
+                                       class="form-control text-center"
+                                       style="width: 90px;"
+                                       min="1"
+                                       max="{{stock.available_stocks}}"
+                                       step="1"
+                                       value="1"
+                                       {% if not market.market_open%}disabled{%endif%}>
+                                <button type="submit" class="btn btn-success buy-button" {% if not market.market_open %}disabled{% endif %}>Buy</button>
+                            </div>
+                            <div class="form-text text-muted">
+                                Total: <strong data-total-display>$0.00</strong>
+                            </div>
                         </form>
 
                     </td>
@@ -56,22 +73,22 @@
                 
                 <div class="mb-3">
                     <label for="stock_ticker" class="form-label">Stock Ticker</label>
-                    <input type="text" class="form-control" id="stock_ticker" name="stock_ticker" required>  <!-- do not change id to user_id. It's not a variable.-->
+                    <input type="text" class="form-control" id="stock_ticker" name="stock_ticker" required>
                 </div>
 
                 <div class="mb-3">
                     <label for="company" class="form-label">Company</label>
-                    <input type="text" class="form-control" id="company" name="company" required>  <!-- do not change id to user_id. It's not a variable.-->
+                    <input type="text" class="form-control" id="company" name="company" required>
                 </div>
 
                 <div class="mb-3">
                     <label for="initial_price" class="form-label">Initial Price (float)</label>
-                    <input type="number" class="form-control" id="initial_price" step="0.01" name="initial_price" required>  <!-- do not change id to user_id. It's not a variable.-->
+                    <input type="number" class="form-control" id="initial_price" step="0.01" name="initial_price" required>
                 </div>
 
                 <div class="mb-3">
                     <label for="available_stocks" class="form-label">Available Stocks</label>
-                    <input type="number" class="form-control" id="available_stocks" step="1" name="available_stocks" required>  <!-- do not change id to user_id. It's not a variable.-->
+                    <input type="number" class="form-control" id="available_stocks" step="1" name="available_stocks" required>
                 </div>
 
                 <button type="submit" class="btn btn-primary">Add Stock</button>
@@ -80,34 +97,145 @@
         {% endif %}
     </div>
     
-<!-- javascript for updating the prices -->
+    <div class="modal fade" id="confirmBuyModal" tabindex="-1" aria-labelledby="confirmBuyLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmBuyLabel">Confirm Purchase</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1">You are about to buy <strong id="buyQuantityPreview">0</strong> share(s) of <strong id="buySymbolPreview"></strong>.</p>
+                    <p class="mb-0">Estimated total: <strong id="buyTotalPreview">$0.00</strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="confirmBuySubmit">Confirm Buy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         document.addEventListener("DOMContentLoaded", () => {
-    async function update_stock_prices() {
-        try {
-            const response = await fetch("/update_stock_prices");
-            const json_data = await response.json();
-            document.querySelectorAll(".updated-price").forEach(cell => {
-                const symbol = cell.dataset.symbol;
-                if (json_data[symbol] !== undefined) {
-                    cell.textContent = `$${json_data[symbol].toFixed(2)}`;
-                }
-            });
-        } catch (error) {
-            console.error("Error fetching prices:", error);
-        }
-    }
+            const buyForms = document.querySelectorAll("[data-buy-form]");
 
-    update_stock_prices();
-    let pollTimer = null;
-    function startPolling() {
-        const delay = document.visibilityState === 'visible' ? 15000 : 15000;
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(update_stock_prices, delay);
-    }
-    startPolling();
-    document.addEventListener('visibilitychange', startPolling);
-});
+            const toNumber = (value) => {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : 0;
+            };
+
+            const updateBuyTotal = (form) => {
+                const qtyInput = form.querySelector('input[name="quantity"]');
+                const totalDisplay = form.querySelector("[data-total-display]");
+                const price = toNumber(form.dataset.currentPrice);
+                const quantity = Math.max(0, toNumber(qtyInput?.value));
+                if (totalDisplay) {
+                    const total = price * quantity;
+                    totalDisplay.textContent = `$${total.toFixed(2)}`;
+                    totalDisplay.classList.toggle("text-success", total > 0);
+                    totalDisplay.classList.toggle("text-muted", total <= 0);
+                }
+            };
+
+            const buyModalEl = document.getElementById("confirmBuyModal");
+            const buyModal = buyModalEl && window.bootstrap ? new bootstrap.Modal(buyModalEl) : null;
+            const quantityPreview = document.getElementById("buyQuantityPreview");
+            const totalPreview = document.getElementById("buyTotalPreview");
+            const symbolPreview = document.getElementById("buySymbolPreview");
+            let pendingBuyForm = null;
+
+            buyForms.forEach((form) => {
+                const qtyInput = form.querySelector('input[name="quantity"]');
+                if (!qtyInput) {
+                    return;
+                }
+                qtyInput.addEventListener("input", () => updateBuyTotal(form));
+                updateBuyTotal(form);
+                form.addEventListener("submit", (event) => {
+                    if (form.dataset.confirmed === "1") {
+                        form.dataset.confirmed = "0";
+                        return;
+                    }
+                    event.preventDefault();
+                    const quantity = Math.max(0, toNumber(qtyInput.value));
+                    if (!quantity) {
+                        return;
+                    }
+                    const price = toNumber(form.dataset.currentPrice);
+                    const total = price * quantity;
+                    if (quantityPreview) {
+                        quantityPreview.textContent = quantity;
+                    }
+                    if (totalPreview) {
+                        totalPreview.textContent = `$${total.toFixed(2)}`;
+                    }
+                    if (symbolPreview) {
+                        symbolPreview.textContent = form.dataset.symbol || "";
+                    }
+                    pendingBuyForm = form;
+                    if (buyModal) {
+                        buyModal.show();
+                    } else {
+                        form.dataset.confirmed = "1";
+                        form.requestSubmit();
+                        pendingBuyForm = null;
+                    }
+                });
+            });
+
+            if (buyModalEl && buyModal) {
+                buyModalEl.addEventListener("hidden.bs.modal", () => {
+                    pendingBuyForm = null;
+                });
+            }
+
+            const confirmBuyBtn = document.getElementById("confirmBuySubmit");
+            if (confirmBuyBtn) {
+                confirmBuyBtn.addEventListener("click", () => {
+                    if (pendingBuyForm) {
+                        pendingBuyForm.dataset.confirmed = "1";
+                        pendingBuyForm.requestSubmit();
+                        pendingBuyForm = null;
+                    }
+                    if (buyModal) {
+                        buyModal.hide();
+                    }
+                });
+            }
+
+            async function update_stock_prices() {
+                try {
+                    const response = await fetch("/update_stock_prices");
+                    const json_data = await response.json();
+                    document.querySelectorAll(".updated-price").forEach(cell => {
+                        const symbol = cell.dataset.symbol;
+                        if (json_data[symbol] !== undefined) {
+                            const latest = Number(json_data[symbol]);
+                            cell.textContent = `$${latest.toFixed(2)}`;
+                            cell.dataset.price = latest.toFixed(2);
+                            const form = cell.closest("tr")?.querySelector("[data-buy-form]");
+                            if (form) {
+                                form.dataset.currentPrice = latest.toFixed(2);
+                                updateBuyTotal(form);
+                            }
+                        }
+                    });
+                } catch (error) {
+                    console.error("Error fetching prices:", error);
+                }
+            }
+
+            update_stock_prices();
+            let pollTimer = null;
+            function startPolling() {
+                const delay = document.visibilityState === 'visible' ? 15000 : 15000;
+                if (pollTimer) clearInterval(pollTimer);
+                pollTimer = setInterval(update_stock_prices, delay);
+            }
+            startPolling();
+            document.addEventListener('visibilitychange', startPolling);
+        });
 
     </script>
 
