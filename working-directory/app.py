@@ -5,6 +5,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from functools import wraps
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, time
+from sqlalchemy import func
 import random
 
 app = Flask(__name__)
@@ -98,6 +99,9 @@ class Transaction(db.Model):
         "user.user_id"), nullable=False)
     stock_id = db.Column(db.Integer, db.ForeignKey("stock.id"), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
+    price = db.Column(db.Numeric(14, 2), nullable=False) ##20oct2025
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False) ##20oct2025 
+
 
 
 class MarketSetting(db.Model):
@@ -596,7 +600,7 @@ def add_order():
         stock.available_stocks = stock.available_stocks - quantity
 
         t = Transaction(order_id=None, user_id=user_id,
-                        stock_id=stock_id, quantity=quantity)
+                        stock_id=stock_id, quantity=quantity, price=price)##20oct2025
         db.session.add(t)
 
         pos = Portfolio.query.filter_by(
@@ -671,9 +675,19 @@ def add_user(username, email, lastname, firstname, password):
 @app.route('/stocks')
 @login_required
 def stocks():
-    stocks = Stock.query.all()
+    stocks = Stock.query.all() 
     market = get_market_context()
-    return render_template('stocks.html', stocks=stocks, market=market)
+    today = datetime.now().date() ##20oct2025
+
+    volumes = {} ##20oct2025
+    for stock in stocks: ##20oct2025
+        volume = db.session.query(func.sum(func.abs(Transaction.quantity))).filter(Transaction.stock_id == stock.id, 
+                                                                          func.date(Transaction.timestamp) == today
+                                                                          ).scalar()    ##20oct2025
+                
+        volumes[stock.id] = abs(volume or 0) ##20oct2025
+
+    return render_template('stocks.html', stocks=stocks, market=market, volumes=volumes)##20oct2025
 
 
 @app.route('/add_stock', methods=['POST'])
@@ -854,7 +868,7 @@ def add_position(user_id, stock_id, quantity):
         stock.available_stocks = stock.available_stocks - quantity
 
         t = Transaction(order_id=None, user_id=user_id,
-                        stock_id=stock_id, quantity=quantity)
+                        stock_id=stock_id, quantity=quantity, price=price)##20oct2025
         db.session.add(t)
 
         pos = Portfolio.query.filter_by(
@@ -920,7 +934,12 @@ def sell_position(holding_id):
         stock.available_stocks = stock.available_stocks + quantity
 
         transaction = Transaction(
-            order_id=None, user_id=current_user.user_id, stock_id=pos.stock_id, quantity=-quantity)
+            order_id=None, 
+            user_id=current_user.user_id, 
+            stock_id=pos.stock_id, 
+            quantity=-quantity,
+            price=price) ##20oct2025
+        
         db.session.add(transaction)
 
         pos.quantity = pos.quantity - quantity

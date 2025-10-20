@@ -20,6 +20,7 @@
                     <th>Initial Price</th>
                     <th>Current Price</th>
                     <th>Available Stocks</th>
+                    <th>Volume</th> <!--20oct2025-->
                     <th>Action</th>
                 </tr>
             </thead>
@@ -35,6 +36,7 @@
                         ${{ '%.2f'|format(stock.current_price) }}
                     </td>
                     <td>{{ stock.available_stocks }}</td>
+                    <td>{{ volumes[stock.id] }}</td> <!--20oct2025-->
                     <td>
                         <form action="{{ url_for('add_order')}}" method="POST" class="d-flex justify-content-center align gap-2">
                             <input type="hidden" name="stock_id" value="{{stock.id}}">
