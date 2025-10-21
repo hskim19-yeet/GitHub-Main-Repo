@@ -10,7 +10,7 @@ import random
 
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -990,13 +990,15 @@ def sell_position(holding_id):
 
     proceeds = (price * Decimal(sell_qty)).quantize(Decimal("0.01"))
 
+    stock = Stock.query.get(pos.stock_id)
+    if stock is not None and stock.available_stocks is not None:
+        stock.available_stocks += sell_qty
 
     pos.quantity -= sell_qty
     pos.current_price_snapshot = price
     if pos.quantity == 0:
         db.session.delete(pos)
 
-  
     acct = CashAccount.query.filter_by(user_id=current_user.user_id).first()
     acct.current_balance = (Decimal(acct.current_balance) + proceeds).quantize(Decimal("0.01"))
 

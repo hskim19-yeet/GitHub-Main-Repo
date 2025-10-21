@@ -1,26 +1,60 @@
-{% extends "base.html" %}
-{% block title %}Portfolio{% endblock %}
-
-{% block content %}
+<!-- templates/portfolio.html -->
+{% extends "base.html" %} {% block title %}Portfolio{% endblock %} {% block
+content %}
 <div class="container mt-4">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h3 mb-0">Portfolio — {{ user.username }}</h1>
     {% if acct %}
-      <span class="badge bg-primary fs-6">
-        Cash: ${{ '%.2f'|format(acct.current_balance or 0) }}
-      </span>
+    <span class="badge bg-primary fs-6">
+      Cash: ${{ '%.2f'|format(acct.current_balance or 0) }}
+    </span>
     {% endif %}
   </div>
 
+  {% set total_mv = 0 %} {% set total_cost = 0 %} {% for pos in positions %} {%
+  set lp = (pos.current_price_snapshot if pos.current_price_snapshot is not none
+  else pos.stock.current_price) or 0 %} {% set total_mv = total_mv +
+  (pos.quantity or 0) * (lp or 0) %} {% set total_cost = total_cost +
+  (pos.quantity or 0) * (pos.purchase_price or 0) %} {% endfor %} {% set
+  total_pnl = total_mv - total_cost %}
+
+  <div class="card mb-4" id="pnlCard" data-role="pnl-card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-end mb-3">
+        <div>
+          <div
+            id="pnlHeadline"
+            class="fs-3 {{ 'text-success' if total_pnl >= 0 else 'text-danger' }}"
+          >
+            {{ total_pnl >= 0 and '+' or '' }}${{ '%.2f'|format(total_pnl) }}
+          </div>
+          <div class="text-muted small">Unrealized P/L (session live)</div>
+        </div>
+        <div class="text-end small">
+          <div>
+            Market Value:
+            <span id="mvTotal">${{ '%.2f'|format(total_mv) }}</span>
+          </div>
+          <div>
+            Cost Basis:
+            <span id="costTotal">${{ '%.2f'|format(total_cost) }}</span>
+          </div>
+        </div>
+      </div>
+      <canvas id="pnlChart" height="120"></canvas>
+    </div>
+  </div>
 
   <div class="card mb-4">
     <div class="card-header">
       <strong>Positions</strong>
       {% if market is defined %}
-        <span class="ms-2 badge {{ 'bg-success' if market.market_open else 'bg-secondary' }}">
-          {{ 'Market Open' if market.market_open else 'Market Closed' }}
-        </span>
-        <span class="text-muted ms-2">Hours: {{ market.display_hours }}</span>
+      <span
+        class="ms-2 badge {{ 'bg-success' if market.market_open else 'bg-secondary' }}"
+      >
+        {{ 'Market Open' if market.market_open else 'Market Closed' }}
+      </span>
+      <span class="text-muted ms-2">Hours: {{ market.display_hours }}</span>
       {% endif %}
     </div>
     <div class="card-body p-0">
@@ -35,74 +69,96 @@
               <th class="text-end">Last Price</th>
               <th class="text-end">Market Value</th>
               <th class="text-end">Unrealized P/L</th>
-              <th class="text-center" style="width: 260px;">Action</th>
+              <th class="text-center" style="width: 260px">Action</th>
             </tr>
           </thead>
           <tbody>
-            {% for pos in positions %}
-            {% set last_price = (pos.current_price_snapshot if pos.current_price_snapshot is not none else pos.stock.current_price) or 0 %}
-            {% set mkt_val = (pos.quantity or 0) * (last_price or 0) %}
-            {% set pnl = (pos.quantity or 0) * ((last_price or 0) - (pos.purchase_price or 0)) %}
+            {% for pos in positions %} {% set last_price =
+            (pos.current_price_snapshot if pos.current_price_snapshot is not
+            none else pos.stock.current_price) or 0 %} {% set mkt_val =
+            (pos.quantity or 0) * (last_price or 0) %} {% set pnl =
+            (pos.quantity or 0) * ((last_price or 0) - (pos.purchase_price or
+            0)) %}
 
-  
-            <tr data-role="position-row"
-                data-ticker="{{ pos.stock.stock_ticker }}"
-                data-qty="{{ pos.quantity }}"
-                data-avg="{{ (pos.purchase_price or 0)|float }}">
-
+            <tr
+              data-role="position-row"
+              data-ticker="{{ pos.stock.stock_ticker }}"
+              data-qty="{{ pos.quantity }}"
+              data-avg="{{ (pos.purchase_price or 0)|float }}"
+            >
               <td class="fw-semibold">{{ pos.stock.stock_ticker }}</td>
               <td class="text-muted">{{ pos.stock.company }}</td>
 
               <td class="text-end">{{ pos.quantity }}</td>
-              <td class="text-end">${{ '%.2f'|format(pos.purchase_price or 0) }}</td>
-
-     
               <td class="text-end">
-                <span data-ticker="{{ pos.stock.stock_ticker }}" data-field="price">
+                ${{ '%.2f'|format(pos.purchase_price or 0) }}
+              </td>
+
+              <td class="text-end">
+                <span
+                  data-ticker="{{ pos.stock.stock_ticker }}"
+                  data-field="price"
+                >
                   ${{ '%.2f'|format(last_price) }}
                 </span>
               </td>
 
-            
               <td class="text-end" data-field="mktval">
                 ${{ '%.2f'|format(mkt_val) }}
               </td>
 
-        
               <td class="text-end" data-field="pnl">
-                <span class="{{ 'text-success' if pnl >= 0 else 'text-danger' }}">
+                <span
+                  class="{{ 'text-success' if pnl >= 0 else 'text-danger' }}"
+                >
                   ${{ '%.2f'|format(pnl) }}
                 </span>
               </td>
 
               <td class="text-center">
-                <form class="d-flex align-items-center justify-content-center gap-3 flex-wrap"
-                      action="{{ url_for('sell_position', holding_id=pos.holding_id) }}"
-                      method="POST"
-                      data-confirm="trade"
-                      data-action="sell"
-                      data-price="{{ last_price }}"
-                      data-ticker ="{{ pos.stock.stock_ticker }}">
-
-                  <input type="number"
-                         class="form-control form-control-sm text-center"
-                         name="quantity"
-                         min="1"
-                         max="{{ pos.quantity }}"
-                         style="width: 90px;"
-                         placeholder="Qty"
-                         required>
-
-                  <span class = "text-success fw-semibold small total-profit"
-                        data-symbol = "{{ pos.stock.stock_ticker }}">
-                        ${{'%.2f'|format(last_price)}}
-
+                <form
+                  class="d-flex align-items-center justify-content-center gap-3 flex-wrap"
+                  action="{{ url_for('sell_position', holding_id=pos.holding_id) }}"
+                  method="POST"
+                  data-confirm="trade"
+                  data-action="sell"
+                  data-ticker="{{ pos.stock.stock_ticker }}"
+                >
+                  <input
+                    type="number"
+                    class="form-control form-control-sm text-center"
+                    name="quantity"
+                    min="1"
+                    max="{{ pos.quantity }}"
+                    style="width: 90px"
+                    placeholder="Qty"
+                    required
+                  />
+                  <input
+                    type="hidden"
+                    name="price"
+                    data-ticker="{{ pos.stock.stock_ticker }}"
+                    data-field="price"
+                  />
+                  <span
+                    class="text-success fw-semibold small total-profit"
+                    data-symbol="{{ pos.stock.stock_ticker }}"
+                  >
+                    ${{ '%.2f'|format(0) }}
                   </span>
-
-            
-                  <button type="submit"
-                          class="btn btn-sm btn-outline-danger"
-                          {% if market and (not market.market_open) %}disabled{% endif %}>
+                  <button
+                    type="submit"
+                    class="btn btn-sm btn-outline-danger"
+                    {%
+                    if
+                    market
+                    and
+                    (not
+                    market.market_open)
+                    %}disabled{%
+                    endif
+                    %}
+                  >
                     Sell
                   </button>
                 </form>
@@ -110,7 +166,9 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="8" class="text-center text-muted py-4">No positions yet.</td>
+              <td colspan="8" class="text-center text-muted py-4">
+                No positions yet.
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -118,7 +176,6 @@
       </div>
     </div>
   </div>
-
 
   <div class="card">
     <div class="card-header">
@@ -130,7 +187,7 @@
         <table class="table mb-0 align-middle">
           <thead class="table-light">
             <tr>
-              <th style="width: 180px;">When</th>
+              <th style="width: 180px">When</th>
               <th>Ticker</th>
               <th>Action</th>
               <th class="text-end">Quantity</th>
@@ -144,9 +201,9 @@
               <td>{{ t.stock.stock_ticker }}</td>
               <td>
                 {% if t.quantity > 0 %}
-                  <span class="badge bg-success">BUY</span>
+                <span class="badge bg-success">BUY</span>
                 {% else %}
-                  <span class="badge bg-danger">SELL</span>
+                <span class="badge bg-danger">SELL</span>
                 {% endif %}
               </td>
               <td class="text-end">{{ t.quantity|abs }}</td>
@@ -154,7 +211,9 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="5" class="text-center text-muted py-4">No transactions yet.</td>
+              <td colspan="5" class="text-center text-muted py-4">
+                No transactions yet.
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -163,47 +222,4 @@
     </div>
   </div>
 </div>
-
-<script>
-  document.addEventListener("DOMContentLoaded", () => {
-    
-    function update_total_profit(row) {
-      const quantity_input = row.querySelector("input[name='quantity']");
-      const price_row = row.querySelector("[data-field='price']");
-      const total_profit = row.querySelector(".total-profit");
-
-      if(!quantity_input || !price_row || !total_profit) return;
-
-      const quantity = parseFloat(quantity_input.value || 0);
-      const price = parseFloat(price_row.textContent.replace('$',''));
-      const total = (quantity * price).toFixed(2);
-      total_profit.textContent = `$${total}`;
-    }
-
-    document.querySelectorAll("tr[data-role='position-row']").forEach(row => {
-      const quantity_input = row.querySelector("input[name='quantity']");
-      if(quantity_input) {
-        quantity_input.addEventListener("input", () => update_total_profit(row));
-
-      }
-    });
-
-    const observer = new MutationObserver(mutations => {
-      mutations.forEach(mutation => {
-        const target = mutation.target;
-        if (target.matches("[data-field='price']")) {
-          const row = target.closest("tr[data-role='position-row']");
-          if (row) {
-            update_total_profit(row);
-          }
-        }
-      });
-    });
-
-    document.querySelectorAll("[data-field='price']").forEach(object => {
-      observer.observe(object, {childList:true, subtree:true, characterData:true});
-
-    });
-  });
-</script>
 {% endblock %}
