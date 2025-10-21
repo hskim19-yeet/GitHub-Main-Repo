@@ -38,10 +38,35 @@
                     <td>{{ stock.available_stocks }}</td>
                     <td>{{ volumes[stock.id] }}</td> <!--20oct2025-->
                     <td>
-                        <form action="{{ url_for('add_order')}}" method="POST" class="d-flex justify-content-center align gap-2">
+                        <form action="{{ url_for('add_order')}}" method="POST" 
+                            class="d-flex align-items-center justify-content-center align gap-3 flex-wrap"
+                            data-confirm="trade"
+                            data-action="buy"
+                            data-price="{{ stock.current_price }}"
+                            >
+                                                        
                             <input type="hidden" name="stock_id" value="{{stock.id}}">
-                            <input type="number" name="quantity" class="form-control text-center" style="width: 80px; flex: 0 0 auto;" min="1" max = "{{stock.available_stocks}}" step="1" value="1" {% if not market.market_open%}disabled{%endif%}>
-                            <button type="submit" class="btn btn-success buy-button" {% if not market.market_open %}disabled{% endif %}>Buy</button>
+                            <input type="hidden" name="price" value="{{stock.current_price}}">
+                            <input type="number" 
+                                name="quantity" 
+                                class="form-control text-center" 
+                                style="width: 90px;" 
+                                min="1" 
+                                max = "{{stock.available_stocks}}" 
+                                step="1" 
+                                value="1" 
+                                {% if not market.market_open%}disabled{%endif%}>
+
+                            <span class="text-warning total-cost fw-semibold small"
+                                data-symbol="{{stock.stock_ticker}}">
+                                ${{'%.2f'|format(stock.current_price)}}
+                            </span>
+
+
+                            <button type="submit" class="btn btn-success buy-button" 
+                                {% if not market.market_open %}disabled{% endif %}>
+                                Buy
+                            </button>
 
                         </form>
 
@@ -85,32 +110,76 @@
 <!-- javascript for updating the prices -->
     <script>
         document.addEventListener("DOMContentLoaded", () => {
-    async function update_stock_prices() {
-        try {
-            const response = await fetch("/update_stock_prices");
-            const json_data = await response.json();
-            document.querySelectorAll(".updated-price").forEach(cell => {
-                const symbol = cell.dataset.symbol;
-                if (json_data[symbol] !== undefined) {
-                    cell.textContent = `$${json_data[symbol].toFixed(2)}`;
+            async function update_stock_prices() {
+                try {
+                    const response = await fetch("/update_stock_prices");
+                    const json_data = await response.json();
+                    document.querySelectorAll(".updated-price").forEach(cell => {
+                        const symbol = cell.dataset.symbol;
+                        if (json_data[symbol] !== undefined) {
+                            cell.textContent = `$${json_data[symbol].toFixed(2)}`;
+                        }
+                    });
+                } catch (error) {
+                    console.error("Error fetching prices:", error);
                 }
-            });
-        } catch (error) {
-            console.error("Error fetching prices:", error);
-        }
-    }
+            }
 
-    update_stock_prices();
-    let pollTimer = null;
-    function startPolling() {
-        const delay = document.visibilityState === 'visible' ? 15000 : 15000;
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(update_stock_prices, delay);
-    }
-    startPolling();
-    document.addEventListener('visibilitychange', startPolling);
-});
+            update_stock_prices();
+            let pollTimer = null;
+            function startPolling() {
+                const delay = document.visibilityState === 'visible' ? 15000 : 15000;
+                if (pollTimer) clearInterval(pollTimer);
+                pollTimer = setInterval(update_stock_prices, delay);
+            }
+            startPolling();
+            document.addEventListener('visibilitychange', startPolling);
+        });
 
     </script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+
+            // Function to update total costs based on quantity and price updates
+            function update_total_costs(row) {
+                const quantity_input= row.querySelector("input[name='quantity']");
+                const price_row = row.querySelector(".updated-price");
+                const total = row.querySelector(".total-cost");
+
+                if (!quantity_input || !price_row || !total) return;
+
+                const quantity = parseFloat(quantity_input.value || 0);
+                const price_parsed = parseFloat(price_row.textContent.replace('$',''));
+                const total_cost = (quantity * price_parsed).toFixed(2);
+                total.textContent = `$${total_cost}`;
+            }
+
+            //Assign event listener to quanity change
+            document.querySelectorAll("tr").forEach(row => {
+                const quantity_input = row.querySelector("input[name='quantity']");
+                if (quantity_input) {
+                    quantity_input.addEventListener("input", () => update_total_costs(row));
+                }
+            });
+
+            //Observer watches for random price changes, updates total
+            const observer = new MutationObserver(mutations => {
+                mutations.forEach(mutation => {
+                    if (mutation.target.classList.contains("updated-price")) {
+                        const row = mutation.target.closest("tr");
+                        if (row) {
+                            update_total_costs(row);
+                        }
+                    }
+                });
+            });
+
+            document.querySelectorAll(".updated-price").forEach((object => {
+                observer.observe(object, { childList: true, subtree: true, characterData: true});
+            }));
+        });    
+    </script>
+
 
     {% endblock %}

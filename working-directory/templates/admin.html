@@ -29,7 +29,7 @@
         </div>
         <div class="col-md-4">
           <label for="market_end_hour" class="form-label">Market closes</label>
-          <input type="number" name="market_end_hour" id="market_end_hour" class="form-control" min="0" max="23" value="{{ '%02d'|format(market.close_time.hour) }}" required>
+          <input type="number" name="market_end_hour" id="market_end_hour" class="form-control" min="0" max="24" value="{{ '%02d'|format(market.close_time.hour) }}" required>
         </div>
         <div class="col-md-auto">
           <button type="submit" class="btn btn-warning text-dark">Save Hours</button>

@@ -10,7 +10,7 @@ import random
 
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -111,7 +111,7 @@ class Transaction(db.Model):
     quantity = db.Column(db.Integer, nullable=False)
 
     price = db.Column(db.Numeric(10, 2), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
     stock = db.relationship('Stock', lazy='joined')
     user = db.relationship('User', lazy='joined')

@@ -76,16 +76,29 @@
               </td>
 
               <td class="text-center">
-                <form class="d-flex gap-2 justify-content-center"
+                <form class="d-flex align-items-center justify-content-center gap-3 flex-wrap"
                       action="{{ url_for('sell_position', holding_id=pos.holding_id) }}"
-                      method="POST">
+                      method="POST"
+                      data-confirm="trade"
+                      data-action="sell"
+                      data-price="{{ last_price }}"
+                      data-ticker ="{{ pos.stock.stock_ticker }}">
+
                   <input type="number"
-                         class="form-control form-control-sm"
+                         class="form-control form-control-sm text-center"
                          name="quantity"
                          min="1"
                          max="{{ pos.quantity }}"
+                         style="width: 90px;"
                          placeholder="Qty"
                          required>
+
+                  <span class = "text-success fw-semibold small total-profit"
+                        data-symbol = "{{ pos.stock.stock_ticker }}">
+                        ${{'%.2f'|format(last_price)}}
+
+                  </span>
+
             
                   <button type="submit"
                           class="btn btn-sm btn-outline-danger"
@@ -150,4 +163,47 @@
     </div>
   </div>
 </div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    
+    function update_total_profit(row) {
+      const quantity_input = row.querySelector("input[name='quantity']");
+      const price_row = row.querySelector("[data-field='price']");
+      const total_profit = row.querySelector(".total-profit");
+
+      if(!quantity_input || !price_row || !total_profit) return;
+
+      const quantity = parseFloat(quantity_input.value || 0);
+      const price = parseFloat(price_row.textContent.replace('$',''));
+      const total = (quantity * price).toFixed(2);
+      total_profit.textContent = `$${total}`;
+    }
+
+    document.querySelectorAll("tr[data-role='position-row']").forEach(row => {
+      const quantity_input = row.querySelector("input[name='quantity']");
+      if(quantity_input) {
+        quantity_input.addEventListener("input", () => update_total_profit(row));
+
+      }
+    });
+
+    const observer = new MutationObserver(mutations => {
+      mutations.forEach(mutation => {
+        const target = mutation.target;
+        if (target.matches("[data-field='price']")) {
+          const row = target.closest("tr[data-role='position-row']");
+          if (row) {
+            update_total_profit(row);
+          }
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-field='price']").forEach(object => {
+      observer.observe(object, {childList:true, subtree:true, characterData:true});
+
+    });
+  });
+</script>
 {% endblock %}
