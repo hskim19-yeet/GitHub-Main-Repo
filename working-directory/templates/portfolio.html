@@ -1,186 +1,153 @@
 {% extends "base.html" %}
-{% block title %}Home{% endblock %}
+{% block title %}Portfolio{% endblock %}
+
 {% block content %}
-
-<div class="container mt-5">
-  <h1 class="mb-4">{{ user.username }}'s Portfolio</h1>
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ category }}">{{ message }}</div>
-      {% endfor %}
+<div class="container mt-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h3 mb-0">Portfolio — {{ user.username }}</h1>
+    {% if acct %}
+      <span class="badge bg-primary fs-6">
+        Cash: ${{ '%.2f'|format(acct.current_balance or 0) }}
+      </span>
     {% endif %}
-  {% endwith %}
-
-  {% if market.market_open %}
-  <div class="alert alert-success d-flex justify-content-between align-items-center">
-    <span>Market open until {{ market.close_time.strftime("%I:%M %p") }}</span>
   </div>
-  {% else %}
-  <div class="alert alert-warning d-flex justify-content-between align-items-center">
-    <div>
-      Market closed. Please try again during market hours.
-      {% if market.closed_today %}
-      Today follows the scheduled market closure.
+
+
+  <div class="card mb-4">
+    <div class="card-header">
+      <strong>Positions</strong>
+      {% if market is defined %}
+        <span class="ms-2 badge {{ 'bg-success' if market.market_open else 'bg-secondary' }}">
+          {{ 'Market Open' if market.market_open else 'Market Closed' }}
+        </span>
+        <span class="text-muted ms-2">Hours: {{ market.display_hours }}</span>
       {% endif %}
     </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Ticker</th>
+              <th>Company</th>
+              <th class="text-end">Qty</th>
+              <th class="text-end">Avg Cost</th>
+              <th class="text-end">Last Price</th>
+              <th class="text-end">Market Value</th>
+              <th class="text-end">Unrealized P/L</th>
+              <th class="text-center" style="width: 260px;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pos in positions %}
+            {% set last_price = (pos.current_price_snapshot if pos.current_price_snapshot is not none else pos.stock.current_price) or 0 %}
+            {% set mkt_val = (pos.quantity or 0) * (last_price or 0) %}
+            {% set pnl = (pos.quantity or 0) * ((last_price or 0) - (pos.purchase_price or 0)) %}
+
+  
+            <tr data-role="position-row"
+                data-ticker="{{ pos.stock.stock_ticker }}"
+                data-qty="{{ pos.quantity }}"
+                data-avg="{{ (pos.purchase_price or 0)|float }}">
+
+              <td class="fw-semibold">{{ pos.stock.stock_ticker }}</td>
+              <td class="text-muted">{{ pos.stock.company }}</td>
+
+              <td class="text-end">{{ pos.quantity }}</td>
+              <td class="text-end">${{ '%.2f'|format(pos.purchase_price or 0) }}</td>
+
+     
+              <td class="text-end">
+                <span data-ticker="{{ pos.stock.stock_ticker }}" data-field="price">
+                  ${{ '%.2f'|format(last_price) }}
+                </span>
+              </td>
+
+            
+              <td class="text-end" data-field="mktval">
+                ${{ '%.2f'|format(mkt_val) }}
+              </td>
+
+        
+              <td class="text-end" data-field="pnl">
+                <span class="{{ 'text-success' if pnl >= 0 else 'text-danger' }}">
+                  ${{ '%.2f'|format(pnl) }}
+                </span>
+              </td>
+
+              <td class="text-center">
+                <form class="d-flex gap-2 justify-content-center"
+                      action="{{ url_for('sell_position', holding_id=pos.holding_id) }}"
+                      method="POST">
+                  <input type="number"
+                         class="form-control form-control-sm"
+                         name="quantity"
+                         min="1"
+                         max="{{ pos.quantity }}"
+                         placeholder="Qty"
+                         required>
+            
+                  <button type="submit"
+                          class="btn btn-sm btn-outline-danger"
+                          {% if market and (not market.market_open) %}disabled{% endif %}>
+                    Sell
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">No positions yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
-  {% endif %}
 
-  <h2>Cash Account</h2>
-  {% if acct %}
-  <p><strong>Current Balance:</strong> ${{ '%.2f'|format(acct.current_balance) }}</p>
-  <form class="row g-2" onsubmit="adjustCash(event)">
-    <div class="col-auto">
-      <input id="cashAmount" type="number" step="0.01" class="form-control" placeholder="Amount" required>
-    </div>
-    <div class="col-auto">
-      <button type="submit" class="btn btn-success" onclick="actionType='deposit'">Deposit</button>
-    </div>
-    <div class="col-auto">
-      <button type="submit" class="btn btn-warning" onclick="actionType='withdraw'">Withdraw</button>
-    </div>
-  </form>
-  {% else %}
-  <p>No account yet. Deposit to create one.</p>
-  {% endif %}
 
-  <hr class="my-4">
-
-  <h2>Stock Positions</h2>
-  <table class="table table-bordered">
-    <thead>
-      <tr>
-        <th>Holding ID</th>
-        <th>Stock Ticker</th>
-        <th>Quantity</th>
-        <th>Updated At</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for p in positions %}
-      <tr>
-        <td>{{ p.holding_id }}</td>
-        <td>{{ p.stock.stock_ticker }} ({{ p.stock.company }})</td>
-        <td>{{ p.quantity }}</td>
-        <td>{{ p.updated_at }}</td>
-        <td>
-          <form action="{{ url_for('sell_position', holding_id=p.holding_id) }}" method="POST" class="d-flex">
-            <input type="number" name="quantity" min="1" max="{{ p.quantity }}" class="form-control form-control-sm me-2" placeholder="Quantity" required>
-            <button type="submit" class="btn btn-danger btn-sm" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Sell</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <h2>Add Position</h2>
-  <form onsubmit="addPosition(event)" class="row g-3">
-    <div class="col-md-4">
-      <label for="position_stock_id" class="form-label">Stock ID</label>
-      <input type="number" class="form-control" id="position_stock_id" required>
+  <div class="card">
+    <div class="card-header">
+      <strong>Transaction History</strong>
+      <span class="text-muted ms-2">(most recent first)</span>
     </div>
-    <div class="col-md-4">
-      <label for="position_quantity" class="form-label">Quantity</label>
-      <input type="number" class="form-control" id="position_quantity" required>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 180px;">When</th>
+              <th>Ticker</th>
+              <th>Action</th>
+              <th class="text-end">Quantity</th>
+              <th class="text-end">Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in txns %}
+            <tr>
+              <td>{{ t.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+              <td>{{ t.stock.stock_ticker }}</td>
+              <td>
+                {% if t.quantity > 0 %}
+                  <span class="badge bg-success">BUY</span>
+                {% else %}
+                  <span class="badge bg-danger">SELL</span>
+                {% endif %}
+              </td>
+              <td class="text-end">{{ t.quantity|abs }}</td>
+              <td class="text-end">${{ '%.2f'|format(t.price) }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">No transactions yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <div class="col-md-auto align-self-end">
-      <button type="submit" class="btn btn-primary" data-market-toggle="trade" {% if not market.market_open %}disabled{% endif %}>Add Position</button>
-    </div>
-  </form>
+  </div>
 </div>
-
-<script>
-  let actionType = '';
-  function adjustCash(event) {
-    event.preventDefault();
-    const amt = document.getElementById('cashAmount').value;
-    if (!amt) {
-      return;
-    }
-    if (actionType === 'deposit') {
-      window.location.href = `/add_cash/{{ user.user_id }}/${amt}`;
-    } else if (actionType === 'withdraw') {
-      window.location.href = `/withdraw_cash/{{ user.user_id }}/${amt}`;
-    }
-  }
-  function addPosition(event) {
-    event.preventDefault();
-    if (document.body.dataset.marketOpen === "0") {
-      return;
-    }
-    const id = document.getElementById('position_stock_id').value;
-    const qty = document.getElementById('position_quantity').value;
-    if (!id || !qty) {
-      return;
-    }
-    window.location.href = `/add_position/{{ user.user_id }}/${id}/${qty}`;
-  }
-  const marketConfig = {
-    hours: "{{ market.setting.hours }}",
-    closedDates: {{ market.closure_list|map(attribute="date")|list|tojson }}
-  };
-  function parseHours(value) {
-    const parts = (value || "").split("-");
-    if (parts.length !== 2) {
-      return { open: "8:00am", close: "5:00pm" };
-    }
-    return { open: parts[0].trim(), close: parts[1].trim() };
-  }
-  function minutesFrom(timeValue) {
-    let value = (timeValue || "").toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
-    if ((value.endsWith("am") || value.endsWith("pm")) && !value.includes(":")) {
-      value = `${value.slice(0, -2)}:00${value.slice(-2)}`;
-    }
-    if (/^\d{1,2}$/.test(value)) {
-      value = `${value}:00`;
-    }
-    const match = value.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
-    if (!match) {
-      return NaN;
-    }
-    let hour = parseInt(match[1], 10);
-    const minute = parseInt(match[2], 10);
-    const suffix = match[3];
-    if (suffix === "pm" && hour !== 12) {
-      hour += 12;
-    }
-    if (suffix === "am" && hour === 12) {
-      hour = 0;
-    }
-    return hour * 60 + minute;
-  }
-  function computeAllow() {
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const schedule = parseHours(marketConfig.hours);
-    const openMinutes = minutesFrom(schedule.open);
-    const closeMinutes = minutesFrom(schedule.close);
-    const today = now.toISOString().slice(0, 10);
-    const closedByDate = marketConfig.closedDates.includes(today);
-    let within = false;
-    if (openMinutes <= closeMinutes) {
-      within = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
-    } else {
-      within = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
-    }
-    return within && !closedByDate;
-  }
-  function syncMarketButtons() {
-    const allow = computeAllow();
-    document.body.dataset.marketOpen = allow ? "1" : "0";
-    document.querySelectorAll('[data-market-toggle="trade"]').forEach((button) => {
-      if (allow) {
-        button.removeAttribute("disabled");
-      } else {
-        button.setAttribute("disabled", "disabled");
-      }
-    });
-  }
-  document.addEventListener("DOMContentLoaded", syncMarketButtons);
-  setInterval(syncMarketButtons, 60000);
-</script>
-
 {% endblock %}

@@ -10,9 +10,13 @@
     <title>{% block title %}{% endblock %} - StockCraft</title>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
+    <nav
+      class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top"
+    >
       <div class="container-fluid">
-        <a class="navbar-brand fw-bold" href="{{ url_for('home') }}">StockCraft</a>
+        <a class="navbar-brand fw-bold" href="{{ url_for('home') }}"
+          >StockCraft</a
+        >
         <button
           class="navbar-toggler"
           type="button"
@@ -24,36 +28,51 @@
 
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Home</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin') }}">Admin</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('wallet') }}">Wallet</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('orders') }}">Order</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('users') }}">Users</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('stocks') }}">Stocks</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('portfolio_index') }}">Portfolio</a></li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('home') }}">Home</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('admin') }}">Admin</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('wallet') }}">Wallet</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('orders') }}">Order</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('users') }}">Users</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('stocks') }}">Stocks</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('portfolio_index') }}"
+                >Portfolio</a
+              >
+            </li>
           </ul>
 
           <ul class="navbar-nav ms-auto">
             {% if current_user.is_authenticated %}
             <li class="nav-item me-4">
               <span class="navbar-text text-warning fw-semibold">
-                Wallet:
-              {% if wallet_balance is not none %}
-                ${{ '%.2f' |format(wallet_balance) }}
-              {% else %}
-                $0.00
-              {% endif %}
+                Wallet: {% if wallet_balance is not none %} ${{ '%.2f'
+                |format(wallet_balance) }} {% else %} $0.00 {% endif %}
               </span>
             </li>
 
             <li class="nav-item">
               <span class="navbar-text me-3">
-                Hi, {{ current_user.username }}{% if current_user.is_admin %} (Admin){% endif %}
+                Hi, {{ current_user.username }}{% if current_user.is_admin %}
+                (Admin){% endif %}
               </span>
             </li>
             {% if current_user.is_admin %}
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin_dashboard') }}">Admin</a>
+              <a class="nav-link" href="{{ url_for('admin_dashboard') }}"
+                >Admin</a
+              >
             </li>
             {% endif %}
             <li class="nav-item">
@@ -80,6 +99,76 @@
       </div>
     </footer>
 
+      
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+(function () {
+  const REFRESH_MS = 15000;
+
+  async function fetchPrices() {
+    try {
+      const res = await fetch("/update_stock_prices", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+
+     
+      document.querySelectorAll("[data-ticker][data-field]").forEach((el) => {
+        const tkr = el.getAttribute("data-ticker");
+        if (!(tkr in data)) return;
+        const live  = Number(data[tkr]);
+        const field = el.getAttribute("data-field");
+
+        if (field === "price") {
+          const formatted = live.toFixed(2);
+          if (el.tagName === "INPUT") {
+            el.value = formatted;
+          } else {
+            el.textContent = `$${formatted}`;
+          }
+          el.dispatchEvent(new CustomEvent("liveprice:update", {
+            detail: { ticker: tkr, price: live }
+          }));
+        }
+      });
+
+    
+      document.querySelectorAll("[data-role='position-row']").forEach((row) => {
+        const tkr = row.getAttribute("data-ticker");
+        if (!(tkr in data)) return;
+
+        const price = Number(data[tkr]);
+        const qty   = Number(row.getAttribute("data-qty") || 0);
+        const avg   = Number(row.getAttribute("data-avg") || 0);
+
+        const mktVal = qty * price;
+        const pnl    = qty * (price - avg);
+
+        const lastPriceEl = row.querySelector("[data-field='price']");
+        const mktValEl    = row.querySelector("[data-field='mktval']");
+        const pnlEl       = row.querySelector("[data-field='pnl']");
+        const sellInput   = row.querySelector("input[name='price']");
+
+        if (lastPriceEl) lastPriceEl.textContent = `$${price.toFixed(2)}`;
+        if (mktValEl)    mktValEl.textContent    = `$${mktVal.toFixed(2)}`;
+        if (pnlEl) {
+          pnlEl.textContent = `$${pnl.toFixed(2)}`;
+          pnlEl.classList.toggle("text-success", pnl >= 0);
+          pnlEl.classList.toggle("text-danger",  pnl < 0);
+        }
+        if (sellInput) sellInput.value = price.toFixed(2);
+      });
+
+    } catch (e) { /* ignore */ }
+  }
+
+  fetchPrices();
+  setInterval(fetchPrices, REFRESH_MS);
+})();
+</script>
+
+  </body>
+</html>
+
   </body>
 </html>
