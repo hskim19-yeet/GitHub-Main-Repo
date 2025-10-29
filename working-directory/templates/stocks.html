@@ -21,6 +21,7 @@
                     <th>Current Price</th>
                     <th>Available Stocks</th>
                     <th>Volume</th> <!--20oct2025-->
+                    <th>Market Cap</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -37,6 +38,9 @@
                     </td>
                     <td>{{ stock.available_stocks }}</td>
                     <td>{{ volumes[stock.id] }}</td> <!--20oct2025-->
+                    <td class="market-cap" data-symbol="{{ stock.stock_ticker }}" data-outstanding="{{ outstanding_stocks[stock.id] }}">
+                        ${{ '%.2f'|format(market_caps[stock.id]) }}
+                    </td>
                     <td>
                         <form action="{{ url_for('add_order')}}" method="POST" 
                             class="d-flex align-items-center justify-content-center align gap-3 flex-wrap"
@@ -120,6 +124,15 @@
                             cell.textContent = `$${json_data[symbol].toFixed(2)}`;
                         }
                     });
+                    document.querySelectorAll(".market-cap").forEach(cell => { 
+                        const symbol = cell.dataset.symbol;    
+                        if (json_data[symbol] !== undefined) {
+                            const outstanding_stocks = parseFloat(cell.dataset.outstanding)
+                            const market_caps = outstanding_stocks * json_data[symbol];
+                            cell.textContent = `$${market_caps.toFixed(2)}`;
+                        }
+                    });
+
                 } catch (error) {
                     console.error("Error fetching prices:", error);
                 }

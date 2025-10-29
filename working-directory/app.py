@@ -697,20 +697,34 @@ def add_user(username, email, lastname, firstname, password):
 def stocks():
     stocks = Stock.query.all()
     market = get_market_context()
-    today = datetime.now().date()  # 20oct2025
+    today = datetime.now().date()  
 
-    volumes = {}  # 20oct2025
-    for stock in stocks:  # 20oct2025
+    volumes = {}
+    market_caps = {}  
+    outstanding_stocks = {}
+    for stock in stocks:  
         volume = db.session.query(func.sum(func.abs(Transaction.quantity))).filter(Transaction.stock_id == stock.id,
-                                                                                   func.date(
-                                                                                       Transaction.timestamp) == today
-                                                                                   # 20oct2025
-                                                                                   ).scalar()
+                                                                                   func.date(Transaction.timestamp) == today
+                                                                                    ).scalar()
 
-        volumes[stock.id] = abs(volume or 0)  # 20oct2025
+        volumes[stock.id] = abs(volume or 0)  
+        
+        #outstanding means shares that are owned by users
+        total_held = db.session.query(func.sum(Portfolio.quantity)).filter(Portfolio.stock_id == stock.id).scalar() or 0
 
-    # 20oct2025
-    return render_template('stocks.html', stocks=stocks, market=market, volumes=volumes)
+        outstanding_stocks[stock.id] = total_held
+        if total_held > 0:
+            current_price_decimal = Decimal(str(stock.current_price or 0))
+            market_caps[stock.id] = float((Decimal(total_held) * current_price_decimal).quantize(Decimal("0.01")))
+        else:
+            market_caps[stock.id] = 0.00
+    
+    return render_template('stocks.html', 
+                           stocks=stocks, 
+                           market=market, 
+                           volumes=volumes, 
+                           market_caps=market_caps, 
+                           outstanding_stocks=outstanding_stocks)
 
 
 @app.route('/add_stock', methods=['POST'])
