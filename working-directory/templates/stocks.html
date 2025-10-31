@@ -19,6 +19,8 @@
                     <th>Company</th>
                     <th>Initial Price</th>
                     <th>Current Price</th>
+                    <th>Day High</th>
+                    <th>Day Low</th>
                     <th>Available Stocks</th>
                     <th>Volume</th> <!--20oct2025-->
                     <th>Market Cap</th>
@@ -35,6 +37,12 @@
                     <td>{{ '%.2f'|format(stock.initial_price) }}</td>
                     <td class="updated-price" data-symbol="{{ stock.stock_ticker }}">
                         ${{ '%.2f'|format(stock.current_price) }}
+                    </td>
+                    <td>
+                        ${{ '%.2f'|format(daily_highs[stock.id]) }}
+                    </td>
+                    <td>
+                        ${{ '%.2f'|format(daily_lows[stock.id]) }}
                     </td>
                     <td>{{ stock.available_stocks }}</td>
                     <td>{{ volumes[stock.id] }}</td> <!--20oct2025-->

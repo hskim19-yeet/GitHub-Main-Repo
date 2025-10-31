@@ -1,4 +1,3 @@
-<!-- templates/base.html -->
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
   <head>
@@ -8,6 +7,17 @@
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
       rel="stylesheet"
     />
+    <style>
+      .brand-logo {
+        height: 48px;
+        width: auto;
+      }
+      @media (max-width: 576px) {
+        .brand-logo {
+          height: 40px;
+        }
+      }
+    </style>
     <title>{% block title %}{% endblock %} - StockCraft</title>
   </head>
   <body>
@@ -15,9 +25,14 @@
       class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top"
     >
       <div class="container-fluid">
-        <a class="navbar-brand fw-bold" href="{{ url_for('home') }}"
-          >StockCraft</a
-        >
+        <a class="navbar-brand d-flex align-items-center fw-bold gap-2" href="{{ url_for('home') }}">
+          <img
+            src="{{ url_for('static', filename='images/stockcraft_logo.png') }}"
+            alt="StockCraft logo"
+            class="brand-logo"
+          />
+          <span>StockCraft</span>
+        </a>
         <button
           class="navbar-toggler"
           type="button"

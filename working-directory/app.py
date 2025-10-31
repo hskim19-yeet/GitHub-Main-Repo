@@ -1,3 +1,4 @@
+import os
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,7 +11,12 @@ import random
 
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password2025@database-1.cf4ak2q88oos.eu-central-1.rds.amazonaws.com/stockcraft_db'
+database_uri = os.getenv(
+    "SQLALCHEMY_DATABASE_URI",
+    "mysql+pymysql://root:password@127.0.0.1/stockcraft_db",
+)
+# Use env var to override connection string in different environments.
+app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -702,6 +708,8 @@ def stocks():
     volumes = {}
     market_caps = {}  
     outstanding_stocks = {}
+    daily_highs = {}
+    daily_lows = {}
     for stock in stocks:  
         volume = db.session.query(func.sum(func.abs(Transaction.quantity))).filter(Transaction.stock_id == stock.id,
                                                                                    func.date(Transaction.timestamp) == today
@@ -718,13 +726,35 @@ def stocks():
             market_caps[stock.id] = float((Decimal(total_held) * current_price_decimal).quantize(Decimal("0.01")))
         else:
             market_caps[stock.id] = 0.00
+
+        high_low = db.session.query(
+            func.max(Transaction.price),
+            func.min(Transaction.price)
+        ).filter(
+            Transaction.stock_id == stock.id,
+            func.date(Transaction.timestamp) == today
+        ).one()
+
+        daily_high = high_low[0]
+        daily_low = high_low[1]
+
+        fallback_price = Decimal(str(stock.current_price or stock.initial_price or 0))
+        if daily_high is None:
+            daily_high = fallback_price
+        if daily_low is None:
+            daily_low = fallback_price
+
+        daily_highs[stock.id] = float(Decimal(daily_high).quantize(Decimal("0.01")))
+        daily_lows[stock.id] = float(Decimal(daily_low).quantize(Decimal("0.01")))
     
     return render_template('stocks.html', 
                            stocks=stocks, 
                            market=market, 
                            volumes=volumes, 
                            market_caps=market_caps, 
-                           outstanding_stocks=outstanding_stocks)
+                           outstanding_stocks=outstanding_stocks,
+                           daily_highs=daily_highs,
+                           daily_lows=daily_lows)
 
 
 @app.route('/add_stock', methods=['POST'])
@@ -1085,7 +1115,6 @@ def wallet_withdraw():
 
 @app.route("/")
 def home():
-
     return render_template("home.html")
 
 
