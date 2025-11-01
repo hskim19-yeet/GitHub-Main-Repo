@@ -3,196 +3,171 @@
 {% block content %}
 
 <h1 class="mb-4">Stocks Inventory</h1>
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div class="alert alert-{{ category }}">{{ message }}</div>
-        {% endfor %}
-        {% endif %}
-        {% endwith %}
-        <table class="table table-bordered">
-            <thead class = "table-dark">
-                <tr>
-                    
-                    <th>ID</th>
-                    <th>Stock Ticker</th>
-                    <th>Company</th>
-                    <th>Initial Price</th>
-                    <th>Current Price</th>
-                    <th>Available Stocks</th>
-                    <th>Volume</th> <!--20oct2025-->
-                    <th>Market Cap</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for stock in stocks %}
-                <tr>
-                     <!-- changed user.id to user.user_id-->
-                    <td>{{ stock.id }}</td>
-                    <td>{{ stock.stock_ticker }}</td>
-                    <td>{{ stock.company }}</td>
-                    <td>{{ '%.2f'|format(stock.initial_price) }}</td>
-                    <td class="updated-price" data-symbol="{{ stock.stock_ticker }}">
-                        ${{ '%.2f'|format(stock.current_price) }}
-                    </td>
-                    <td>{{ stock.available_stocks }}</td>
-                    <td>{{ volumes[stock.id] }}</td> <!--20oct2025-->
-                    <td class="market-cap" data-symbol="{{ stock.stock_ticker }}" data-outstanding="{{ outstanding_stocks[stock.id] }}">
-                        ${{ '%.2f'|format(market_caps[stock.id]) }}
-                    </td>
-                    <td>
-                        <form action="{{ url_for('add_order')}}" method="POST" 
-                            class="d-flex align-items-center justify-content-center align gap-3 flex-wrap"
-                            data-confirm="trade"
-                            data-action="buy"
-                            data-price="{{ stock.current_price }}"
-                            >
-                                                        
-                            <input type="hidden" name="stock_id" value="{{stock.id}}">
-                            <input type="hidden" name="price" value="{{stock.current_price}}">
-                            <input type="number" 
-                                name="quantity" 
-                                class="form-control text-center" 
-                                style="width: 90px;" 
-                                min="1" 
-                                max = "{{stock.available_stocks}}" 
-                                step="1" 
-                                value="1" 
-                                {% if not market.market_open%}disabled{%endif%}>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="alert alert-{{ category }}">{{ message }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
 
-                            <span class="text-warning total-cost fw-semibold small"
-                                data-symbol="{{stock.stock_ticker}}">
-                                ${{'%.2f'|format(stock.current_price)}}
-                            </span>
+<table class="table table-bordered">
+  <thead class="table-dark">
+    <tr>
+      <th>ID</th>
+      <th>Stock Ticker</th>
+      <th>Company</th>
+      <th>Initial Price</th>
+      <th>Current Price</th>
+      <th>Available Stocks</th>
+      <th>Volume</th>
+      <th>Market Cap</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for stock in stocks %}
+    <tr>
+      <td>{{ stock.id }}</td>
+      <td>{{ stock.stock_ticker }}</td>
+      <td>{{ stock.company }}</td>
+      <td>{{ '%.2f'|format(stock.initial_price) }}</td>
+      <td class="updated-price" data-symbol="{{ stock.stock_ticker }}">
+        ${{ '%.2f'|format(stock.current_price) }}
+      </td>
+      <td>{{ stock.available_stocks }}</td>
+      <td>{{ volumes[stock.id] }}</td>
+      <td
+        class="market-cap"
+        data-symbol="{{ stock.stock_ticker }}"
+        data-outstanding="{{ outstanding_stocks[stock.id] }}"
+      >
+        ${{ '%.2f'|format(market_caps[stock.id]) }}
+      </td>
+      <td>
+        <form
+          action="{{ url_for('add_order')}}"
+          method="POST"
+          class="d-flex align-items-center justify-content-center align gap-3 flex-wrap"
+          data-confirm="trade"
+          data-action="buy"
+          data-price="{{ stock.current_price }}"
+        >
+          <input type="hidden" name="stock_id" value="{{stock.id}}" />
+          <input type="hidden" name="price" value="{{stock.current_price}}" />
+          <input
+            type="number"
+            name="quantity"
+            class="form-control text-center"
+            style="width: 90px;"
+            min="1"
+            max="{{stock.available_stocks}}"
+            step="1"
+            value="1"
+            {% if not market.market_open %}disabled{% endif %}
+          />
 
+          <span
+            class="text-warning total-cost fw-semibold small"
+            data-symbol="{{stock.stock_ticker}}"
+          >
+            ${{'%.2f'|format(stock.current_price)}}
+          </span>
 
-                            <button type="submit" class="btn btn-success buy-button" 
-                                {% if not market.market_open %}disabled{% endif %}>
-                                Buy
-                            </button>
+          <button
+            type="submit"
+            class="btn btn-success buy-button"
+            {% if not market.market_open %}disabled{% endif %}
+          >
+            Buy
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 
-                        </form>
-
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        
-        {% if current_user.is_authenticated and current_user.is_admin %}
-        <div class="container mt-5">
-            <h2>Add Stock</h2>
-            <form action="{{ url_for('add_stock') }}" method="POST">
-                
-                <div class="mb-3">
-                    <label for="stock_ticker" class="form-label">Stock Ticker</label>
-                    <input type="text" class="form-control" id="stock_ticker" name="stock_ticker" required>  <!-- do not change id to user_id. It's not a variable.-->
-                </div>
-
-                <div class="mb-3">
-                    <label for="company" class="form-label">Company</label>
-                    <input type="text" class="form-control" id="company" name="company" required>  <!-- do not change id to user_id. It's not a variable.-->
-                </div>
-
-                <div class="mb-3">
-                    <label for="initial_price" class="form-label">Initial Price (float)</label>
-                    <input type="number" class="form-control" id="initial_price" step="0.01" name="initial_price" required>  <!-- do not change id to user_id. It's not a variable.-->
-                </div>
-
-                <div class="mb-3">
-                    <label for="available_stocks" class="form-label">Available Stocks</label>
-                    <input type="number" class="form-control" id="available_stocks" step="1" name="available_stocks" required>  <!-- do not change id to user_id. It's not a variable.-->
-                </div>
-
-                <button type="submit" class="btn btn-primary">Add Stock</button>
-            </form>
-        </div>
-        {% endif %}
-    </div>
-    
 <!-- javascript for updating the prices -->
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            async function update_stock_prices() {
-                try {
-                    const response = await fetch("/update_stock_prices");
-                    const json_data = await response.json();
-                    document.querySelectorAll(".updated-price").forEach(cell => {
-                        const symbol = cell.dataset.symbol;
-                        if (json_data[symbol] !== undefined) {
-                            cell.textContent = `$${json_data[symbol].toFixed(2)}`;
-                        }
-                    });
-                    document.querySelectorAll(".market-cap").forEach(cell => { 
-                        const symbol = cell.dataset.symbol;    
-                        if (json_data[symbol] !== undefined) {
-                            const outstanding_stocks = parseFloat(cell.dataset.outstanding)
-                            const market_caps = outstanding_stocks * json_data[symbol];
-                            cell.textContent = `$${market_caps.toFixed(2)}`;
-                        }
-                    });
-
-                } catch (error) {
-                    console.error("Error fetching prices:", error);
-                }
-            }
-
-            update_stock_prices();
-            let pollTimer = null;
-            function startPolling() {
-                const delay = document.visibilityState === 'visible' ? 15000 : 15000;
-                if (pollTimer) clearInterval(pollTimer);
-                pollTimer = setInterval(update_stock_prices, delay);
-            }
-            startPolling();
-            document.addEventListener('visibilitychange', startPolling);
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    async function update_stock_prices() {
+      try {
+        const response = await fetch("/update_stock_prices");
+        const json_data = await response.json();
+        document.querySelectorAll(".updated-price").forEach((cell) => {
+          const symbol = cell.dataset.symbol;
+          if (json_data[symbol] !== undefined) {
+            cell.textContent = `$${json_data[symbol].toFixed(2)}`;
+          }
         });
+        document.querySelectorAll(".market-cap").forEach((cell) => {
+          const symbol = cell.dataset.symbol;
+          if (json_data[symbol] !== undefined) {
+            const outstanding_stocks = parseFloat(cell.dataset.outstanding);
+            const market_caps = outstanding_stocks * json_data[symbol];
+            cell.textContent = `$${market_caps.toFixed(2)}`;
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching prices:", error);
+      }
+    }
 
-    </script>
+    update_stock_prices();
+    let pollTimer = null;
+    function startPolling() {
+      const delay =
+        document.visibilityState === "visible" ? 15000 : 15000;
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(update_stock_prices, delay);
+    }
+    startPolling();
+    document.addEventListener("visibilitychange", startPolling);
+  });
+</script>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    function update_total_costs(row) {
+      const quantity_input = row.querySelector("input[name='quantity']");
+      const price_row = row.querySelector(".updated-price");
+      const total = row.querySelector(".total-cost");
 
-            // Function to update total costs based on quantity and price updates
-            function update_total_costs(row) {
-                const quantity_input= row.querySelector("input[name='quantity']");
-                const price_row = row.querySelector(".updated-price");
-                const total = row.querySelector(".total-cost");
+      if (!quantity_input || !price_row || !total) return;
 
-                if (!quantity_input || !price_row || !total) return;
+      const quantity = parseFloat(quantity_input.value || 0);
+      const price_parsed = parseFloat(price_row.textContent.replace("$", ""));
+      const total_cost = (quantity * price_parsed).toFixed(2);
+      total.textContent = `$${total_cost}`;
+    }
 
-                const quantity = parseFloat(quantity_input.value || 0);
-                const price_parsed = parseFloat(price_row.textContent.replace('$',''));
-                const total_cost = (quantity * price_parsed).toFixed(2);
-                total.textContent = `$${total_cost}`;
-            }
+    document.querySelectorAll("tr").forEach((row) => {
+      const quantity_input = row.querySelector("input[name='quantity']");
+      if (quantity_input) {
+        quantity_input.addEventListener("input", () =>
+          update_total_costs(row)
+        );
+      }
+    });
 
-            //Assign event listener to quanity change
-            document.querySelectorAll("tr").forEach(row => {
-                const quantity_input = row.querySelector("input[name='quantity']");
-                if (quantity_input) {
-                    quantity_input.addEventListener("input", () => update_total_costs(row));
-                }
-            });
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.target.classList.contains("updated-price")) {
+          const row = mutation.target.closest("tr");
+          if (row) update_total_costs(row);
+        }
+      });
+    });
 
-            //Observer watches for random price changes, updates total
-            const observer = new MutationObserver(mutations => {
-                mutations.forEach(mutation => {
-                    if (mutation.target.classList.contains("updated-price")) {
-                        const row = mutation.target.closest("tr");
-                        if (row) {
-                            update_total_costs(row);
-                        }
-                    }
-                });
-            });
+    document.querySelectorAll(".updated-price").forEach((object) => {
+      observer.observe(object, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
+  });
+</script>
 
-            document.querySelectorAll(".updated-price").forEach((object => {
-                observer.observe(object, { childList: true, subtree: true, characterData: true});
-            }));
-        });    
-    </script>
-
-
-    {% endblock %}
+{% endblock %}
