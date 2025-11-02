@@ -66,6 +66,8 @@ content %}
               <th class="text-end">Qty</th>
               <th class="text-end">Avg Cost</th>
               <th class="text-end">Last Price</th>
+              <th class="text-end">Day High</th>
+              <th class="text-end">Day Low</th>
               <th class="text-end">Market Value</th>
               <th class="text-end">Unrealized P/L</th>
               <th class="text-center" style="width: 260px">Action</th>
@@ -101,7 +103,12 @@ content %}
                   ${{ '%.2f'|format(last_price) }}
                 </span>
               </td>
-
+              <td class="text-end">
+                ${{ '%.2f'|format(pos.stock.day_high or 0) }}
+              </td>
+              <td class="text-end">
+                ${{ '%.2f'|format(pos.stock.day_low or 0) }}
+              </td>
               <td class="text-end" data-field="mktval">
                 ${{ '%.2f'|format(mkt_val) }}
               </td>

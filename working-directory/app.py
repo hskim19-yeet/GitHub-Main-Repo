@@ -1,4 +1,3 @@
-import os
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -6,17 +5,17 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from functools import wraps
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, time
-from sqlalchemy import func
+from sqlalchemy import func, event
 import random
+from zoneinfo import ZoneInfo
+import enum
 
 app = Flask(__name__)
 
-database_uri = os.getenv(
-    "SQLALCHEMY_DATABASE_URI",
-    "mysql+pymysql://root:password@127.0.0.1/stockcraft_db",
-)
-# Use env var to override connection string in different environments.
-app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
+AZ = ZoneInfo("America/Phoenix")
+
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password2025@database-1.cf4ak2q88oos.eu-central-1.rds.amazonaws.com/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -44,6 +43,7 @@ def admin_required(f):
         return f(*args, **kwargs)
     return wrapper
 
+
 def parse_price_or_fallback(raw_val, fallback: Decimal) -> Decimal:
     try:
         if raw_val is None or str(raw_val).strip() == "":
@@ -52,7 +52,22 @@ def parse_price_or_fallback(raw_val, fallback: Decimal) -> Decimal:
     except (InvalidOperation, ValueError):
         return fallback.quantize(Decimal("0.01"))
 
-class User(UserMixin, db.Model):
+
+class TimestampMixin(object):
+    created_at = db.Column(db.DateTime(timezone=True),
+                           server_default=func.now(), nullable=False)
+    updated_at = db.Column(db.DateTime(
+        timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class TransactionType(enum.Enum):
+    BUY = "buy"
+    SELL = "sell"
+    DEPOSIT = "deposit"
+    WITHDRAW = "withdraw"
+
+
+class User(UserMixin, TimestampMixin, db.Model):
     __tablename__ = "user"
     user_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -79,7 +94,7 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password, raw_password)
 
 
-class Stock(db.Model):
+class Stock(TimestampMixin, db.Model):
     __tablename__ = "stock"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     stock_ticker = db.Column(db.String(80), unique=True, nullable=False)
@@ -92,7 +107,17 @@ class Stock(db.Model):
     portfolios = db.relationship("Portfolio", backref="stock", lazy=True)
 
 
-class Order(db.Model):
+if not hasattr(Stock, "day_open"):
+    Stock.day_open = db.Column(db.Numeric(14, 2), nullable=True)
+if not hasattr(Stock, "day_high"):
+    Stock.day_high = db.Column(db.Numeric(14, 2), nullable=True)
+if not hasattr(Stock, "day_low"):
+    Stock.day_low = db.Column(db.Numeric(14, 2), nullable=True)
+if not hasattr(Stock, "day_date"):
+    Stock.day_date = db.Column(db.Date, nullable=True)
+
+
+class Order(TimestampMixin, db.Model):
     __tablename__ = "order"
     order_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey(
@@ -102,28 +127,29 @@ class Order(db.Model):
     quantity = db.Column(db.Integer, nullable=False, default=1)
 
 
-class Transaction(db.Model):
-    __tablename__ = "transaction"       
+class Transaction(TimestampMixin, db.Model):
+    __tablename__ = "transaction"
     __table_args__ = {"extend_existing": True}
 
     transaction_id = db.Column(
-        db.Integer, primary_key=True)         
-    
+        db.Integer, primary_key=True)
+
     order_id = db.Column(db.Integer, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey(
         'user.user_id'), nullable=False)
-    stock_id = db.Column(db.Integer, db.ForeignKey('stock.id'), nullable=False)
+    stock_id = db.Column(db.Integer, db.ForeignKey('stock.id'), nullable=True)
 
     quantity = db.Column(db.Integer, nullable=False)
 
     price = db.Column(db.Numeric(10, 2), nullable=False)
+    transaction_type = db.Column(db.Enum(TransactionType), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
     stock = db.relationship('Stock', lazy='joined')
     user = db.relationship('User', lazy='joined')
 
 
-class MarketSetting(db.Model):
+class MarketSetting(TimestampMixin, db.Model):
     __tablename__ = "market_setting"
     id = db.Column(db.Integer, primary_key=True)
     hours = db.Column(db.String(50), nullable=False, default="08:00-17:00")
@@ -132,7 +158,7 @@ class MarketSetting(db.Model):
                           default="Monday,Tuesday,Wednesday,Thursday,Friday")
 
 
-class ClosureDates(db.Model):
+class ClosureDates(TimestampMixin, db.Model):
     __tablename__ = "closure_dates"
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     closure_date = db.Column(db.Date, nullable=False, unique=True)
@@ -140,6 +166,29 @@ class ClosureDates(db.Model):
     open_hour = db.Column(db.Integer, nullable=True)
     close_hour = db.Column(db.Integer, nullable=True)
     for_whole_day = db.Column(db.Boolean, nullable=False, default=True)
+
+
+@app.template_filter("aztime")
+def aztime(dt):
+    if dt is None:
+        return ""
+    try:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        return dt.astimezone(AZ).strftime("%Y-%m-%d %I:%M:%S %p")
+    except Exception:
+        return str(dt)
+
+
+def set_session_tz(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    try:
+        try:
+            cursor.execute("SET time_zone = 'America/Phoenix';")
+        except Exception:
+            cursor.execute("SET time_zone = '-07:00';")
+    finally:
+        cursor.close()
 
 
 def parse_time_string(value: str):
@@ -244,21 +293,28 @@ def update_stock_prices():
     SIGMA = 0.0015
     JUMP_PROB = 0.004
     JUMP_SIZE = 0.01
-
+    today_az = datetime.now(AZ).date()
     stocks = Stock.query.all()
-
     for stock in stocks:
-        price = float(stock.current_price or 0) or 100.0
+        base = float(stock.current_price or 0) or 100.0
         pct = random.gauss(MU, SIGMA)
         if random.random() < JUMP_PROB:
             pct += random.uniform(-JUMP_SIZE, JUMP_SIZE)
-        new_price = price * (1.0 + pct)
-        new_price = max(0.01, round(new_price, 2))
+        new_price = max(0.01, round(base * (1.0 + pct), 2))
         stock.current_price = new_price
-
+        if stock.day_date != today_az or stock.day_open is None:
+            stock.day_date = today_az
+            stock.day_open = Decimal(str(new_price))
+            stock.day_high = Decimal(str(new_price))
+            stock.day_low = Decimal(str(new_price))
+        else:
+            npd = Decimal(str(new_price))
+            if stock.day_high is None or npd > stock.day_high:
+                stock.day_high = npd
+            if stock.day_low is None or npd < stock.day_low:
+                stock.day_low = npd
     db.session.commit()
-    # return JSON data like "AAPL": 300.00, "BASS": 199.90, etc.
-    return jsonify({stock.stock_ticker: stock.current_price for stock in stocks})
+    return jsonify({"status": "ok"})
 
 
 @app.route("/signup", methods=["GET", "POST"])
@@ -565,7 +621,7 @@ def orders():
         Order.order_id.desc()).limit(20).all()
 
     market = get_market_context()
-    return render_template("orders.html", stocks=stocks, acct=acct, positions=positions, user_orders=user_orders, market=market)
+    return ""
 
 
 @app.route("/orders/add", methods=["POST"])
@@ -584,11 +640,9 @@ def add_order():
         flash("Invalid price or quantity.", "danger")
         return redirect(url_for("stocks"))
 
-
     if stock.available_stocks is not None and stock.available_stocks < quantity:
         flash("Not enough available shares.", "danger")
         return redirect(url_for("stocks"))
-
 
     acct = CashAccount.query.filter_by(user_id=user_id).first()
     if not acct:
@@ -600,15 +654,12 @@ def add_order():
         flash("Insufficient funds.", "danger")
         return redirect(url_for("stocks"))
 
-
     acct.current_balance = (
         Decimal(str(acct.current_balance)) - cost
     ).quantize(Decimal("0.01"))
 
-
     if stock.available_stocks is not None:
         stock.available_stocks -= quantity
-
 
     pos = Portfolio.query.filter_by(user_id=user_id, stock_id=stock_id).first()
     if not pos:
@@ -623,29 +674,30 @@ def add_order():
 
     new_qty = pos.quantity + quantity
     if pos.quantity > 0:
-        existing_cost = (Decimal(str(pos.purchase_price)) * Decimal(pos.quantity))
+        existing_cost = (Decimal(str(pos.purchase_price))
+                         * Decimal(pos.quantity))
         total_cost = existing_cost + cost
-        pos.purchase_price = (total_cost / Decimal(new_qty)).quantize(Decimal("0.01"))
+        pos.purchase_price = (total_cost / Decimal(new_qty)
+                              ).quantize(Decimal("0.01"))
     else:
         pos.purchase_price = price
 
     pos.quantity = new_qty
     pos.current_price_snapshot = price
 
-   
     txn = Transaction(
         order_id=None,
         user_id=user_id,
         stock_id=stock_id,
         quantity=quantity,
-        price=price
+        price=price,
+        transaction_type=TransactionType.BUY
     )
     db.session.add(txn)
 
     db.session.commit()
     flash("Order executed.", "success")
     return redirect(url_for("portfolio", user_id=user_id))
-
 
 
 @app.route("/orders/sell/<int:order_id>")
@@ -703,58 +755,37 @@ def add_user(username, email, lastname, firstname, password):
 def stocks():
     stocks = Stock.query.all()
     market = get_market_context()
-    today = datetime.now().date()  
+    today = datetime.now().date()
 
     volumes = {}
-    market_caps = {}  
+    market_caps = {}
     outstanding_stocks = {}
-    daily_highs = {}
-    daily_lows = {}
-    for stock in stocks:  
+    for stock in stocks:
         volume = db.session.query(func.sum(func.abs(Transaction.quantity))).filter(Transaction.stock_id == stock.id,
-                                                                                   func.date(Transaction.timestamp) == today
-                                                                                    ).scalar()
+                                                                                   func.date(
+                                                                                       Transaction.timestamp) == today
+                                                                                   ).scalar()
 
-        volumes[stock.id] = abs(volume or 0)  
-        
-        #outstanding means shares that are owned by users
-        total_held = db.session.query(func.sum(Portfolio.quantity)).filter(Portfolio.stock_id == stock.id).scalar() or 0
+        volumes[stock.id] = abs(volume or 0)
+
+        # outstanding means shares that are owned by users
+        total_held = db.session.query(func.sum(Portfolio.quantity)).filter(
+            Portfolio.stock_id == stock.id).scalar() or 0
 
         outstanding_stocks[stock.id] = total_held
         if total_held > 0:
             current_price_decimal = Decimal(str(stock.current_price or 0))
-            market_caps[stock.id] = float((Decimal(total_held) * current_price_decimal).quantize(Decimal("0.01")))
+            market_caps[stock.id] = float(
+                (Decimal(total_held) * current_price_decimal).quantize(Decimal("0.01")))
         else:
             market_caps[stock.id] = 0.00
 
-        high_low = db.session.query(
-            func.max(Transaction.price),
-            func.min(Transaction.price)
-        ).filter(
-            Transaction.stock_id == stock.id,
-            func.date(Transaction.timestamp) == today
-        ).one()
-
-        daily_high = high_low[0]
-        daily_low = high_low[1]
-
-        fallback_price = Decimal(str(stock.current_price or stock.initial_price or 0))
-        if daily_high is None:
-            daily_high = fallback_price
-        if daily_low is None:
-            daily_low = fallback_price
-
-        daily_highs[stock.id] = float(Decimal(daily_high).quantize(Decimal("0.01")))
-        daily_lows[stock.id] = float(Decimal(daily_low).quantize(Decimal("0.01")))
-    
-    return render_template('stocks.html', 
-                           stocks=stocks, 
-                           market=market, 
-                           volumes=volumes, 
-                           market_caps=market_caps, 
-                           outstanding_stocks=outstanding_stocks,
-                           daily_highs=daily_highs,
-                           daily_lows=daily_lows)
+    return render_template('stocks.html',
+                           stocks=stocks,
+                           market=market,
+                           volumes=volumes,
+                           market_caps=market_caps,
+                           outstanding_stocks=outstanding_stocks)
 
 
 @app.route('/add_stock', methods=['POST'])
@@ -796,7 +827,7 @@ def add_stock():
     return redirect(url_for('stocks'))
 
 
-class CashAccount(db.Model):
+class CashAccount(TimestampMixin, db.Model):
     __tablename__ = "cash_account"
     cash_account_id = db.Column(
         db.Integer, primary_key=True, autoincrement=True)
@@ -812,7 +843,7 @@ class CashAccount(db.Model):
     )
 
 
-class Portfolio(db.Model):
+class Portfolio(TimestampMixin, db.Model):
     __tablename__ = "portfolio"
     holding_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey(
@@ -836,11 +867,17 @@ class Portfolio(db.Model):
 
 with app.app_context():
     db.create_all()
-    setting = MarketSetting.query.first()
-    if not setting:
-        setting = MarketSetting(hours="08:00-17:00", schedule="")
-        db.session.add(setting)
-        db.session.commit()
+
+    @event.listens_for(db.engine, "connect")
+    def set_session_tz(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            try:
+                cursor.execute("SET time_zone = 'America/New_York';")
+            except Exception:
+                cursor.execute("SET time_zone = '-05:00';")
+        finally:
+            cursor.close()
 
 
 @app.route("/portfolio")
@@ -904,6 +941,16 @@ def add_cash(user_id, amount):
         acct.current_balance = (
             Decimal(str(acct.current_balance)) + amount_value
         ).quantize(Decimal("0.01"))
+
+        txn = Transaction(
+            order_id=None,
+            user_id=user_id,
+            stock_id=None,
+            quantity=0,
+            price=amount_value,
+            transaction_type=TransactionType.DEPOSIT
+        )
+    db.session.add(txn)
     db.session.commit()
     flash(f'Added ${amount_value:.2f} to cash account.', 'success')
     return redirect(url_for('portfolio', user_id=user_id))
@@ -925,6 +972,16 @@ def withdraw_cash(user_id, amount):
         acct.current_balance = (
             Decimal(str(acct.current_balance)) - amount_value
         ).quantize(Decimal("0.01"))
+
+        txn = Transaction(
+            order_id=None,
+            user_id=user_id,
+            stock_id=None,
+            quantity=0,
+            price=amount_value,
+            transaction_type=TransactionType.WITHDRAW
+        )
+        db.session.add(txn)
         db.session.commit()
         flash(f'Withdrew ${amount_value:.2f} from cash account.', 'success')
     else:
@@ -1025,7 +1082,6 @@ def sell_position(holding_id):
     sell_qty = int(request.form.get("quantity", 0))
     form_price = request.form.get("price")
 
-
     fallback = Decimal(str(pos.stock.current_price or 0))
     price = parse_price_or_fallback(form_price, fallback)
     if price <= 0 or sell_qty <= 0 or sell_qty > pos.quantity:
@@ -1044,15 +1100,16 @@ def sell_position(holding_id):
         db.session.delete(pos)
 
     acct = CashAccount.query.filter_by(user_id=current_user.user_id).first()
-    acct.current_balance = (Decimal(acct.current_balance) + proceeds).quantize(Decimal("0.01"))
-
+    acct.current_balance = (
+        Decimal(acct.current_balance) + proceeds).quantize(Decimal("0.01"))
 
     txn = Transaction(
         order_id=None,
         user_id=current_user.user_id,
         stock_id=pos.stock_id,
-        quantity=-sell_qty,     
-        price=price
+        quantity=-sell_qty,
+        price=price,
+        transaction_type=TransactionType.SELL
     )
     db.session.add(txn)
 
@@ -1081,9 +1138,19 @@ def wallet_deposit():
                            current_balance=amount)
         db.session.add(acct)
     else:
-        acct.current_balance = acct.current_balance + amount
+        acct.current_balance += amount
 
+    txn = Transaction(
+        order_id=None,
+        user_id=current_user.user_id,
+        stock_id=None,
+        quantity=0,
+        price=amount,
+        transaction_type=TransactionType.DEPOSIT
+    )
+    db.session.add(txn)
     db.session.commit()
+
     flash(f"Deposited ${amount:.2f}.", "success")
     return redirect(url_for("wallet"))
 
@@ -1107,14 +1174,26 @@ def wallet_withdraw():
         flash("Insufficient funds.", "error")
         return redirect(url_for("wallet"))
 
-    acct.current_balance = acct.current_balance - amount
+    acct.current_balance -= amount
+
+    txn = Transaction(
+        order_id=None,
+        user_id=current_user.user_id,
+        stock_id=None,
+        quantity=0,
+        price=amount,
+        transaction_type=TransactionType.WITHDRAW
+    )
+    db.session.add(txn)
     db.session.commit()
+
     flash(f"Withdrew ${amount:.2f}.", "success")
     return redirect(url_for("wallet"))
 
 
 @app.route("/")
 def home():
+
     return render_template("home.html")
 
 
