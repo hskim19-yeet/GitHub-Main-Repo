@@ -1,16 +1,14 @@
-#from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
-#from flask_sqlalchemy import SQLAlchemy
-#from werkzeug.security import generate_password_hash, check_password_hash
-#from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
-#from functools import wraps
-#from decimal import Decimal, InvalidOperation
-#from datetime import datetime, time
-#from sqlalchemy import func, event
-#import random
-#from zoneinfo import ZoneInfo
-#import enum
-
-#HELLO CHRISTIAN. JUST A TEST. CAN YOU SEE THIS AFTER PULLING?
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
+from functools import wraps
+from decimal import Decimal, InvalidOperation
+from datetime import datetime, time
+from sqlalchemy import func, event
+import random
+from zoneinfo import ZoneInfo
+import enum
 
 app = Flask(__name__)
 
