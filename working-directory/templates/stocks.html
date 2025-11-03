@@ -22,6 +22,8 @@
       <th>Available Stocks</th>
       <th>Volume</th>
       <th>Market Cap</th>
+      <th>Day High</th>
+      <th>Day Low</th>
       <th>Action</th>
     </tr>
   </thead>
@@ -45,6 +47,20 @@
         ${{ '%.2f'|format(market_caps[stock.id]) }}
       </td>
       <td>
+        {% if stock.day_high is defined and stock.day_high is not none %}
+          ${{ '%.2f'|format(stock.day_high) }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
+        {% if stock.day_low is defined and stock.day_low is not none %}
+          ${{ '%.2f'|format(stock.day_low) }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
         <form
           action="{{ url_for('add_order')}}"
           method="POST"
@@ -66,14 +82,12 @@
             value="1"
             {% if not market.market_open %}disabled{% endif %}
           />
-
           <span
             class="text-warning total-cost fw-semibold small"
             data-symbol="{{stock.stock_ticker}}"
           >
             ${{'%.2f'|format(stock.current_price)}}
           </span>
-
           <button
             type="submit"
             class="btn btn-success buy-button"
@@ -88,7 +102,6 @@
   </tbody>
 </table>
 
-<!-- javascript for updating the prices -->
 <script>
   document.addEventListener("DOMContentLoaded", () => {
     async function update_stock_prices() {
@@ -117,8 +130,7 @@
     update_stock_prices();
     let pollTimer = null;
     function startPolling() {
-      const delay =
-        document.visibilityState === "visible" ? 15000 : 15000;
+      const delay = document.visibilityState === "visible" ? 15000 : 15000;
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(update_stock_prices, delay);
     }
@@ -133,9 +145,7 @@
       const quantity_input = row.querySelector("input[name='quantity']");
       const price_row = row.querySelector(".updated-price");
       const total = row.querySelector(".total-cost");
-
       if (!quantity_input || !price_row || !total) return;
-
       const quantity = parseFloat(quantity_input.value || 0);
       const price_parsed = parseFloat(price_row.textContent.replace("$", ""));
       const total_cost = (quantity * price_parsed).toFixed(2);
@@ -145,9 +155,7 @@
     document.querySelectorAll("tr").forEach((row) => {
       const quantity_input = row.querySelector("input[name='quantity']");
       if (quantity_input) {
-        quantity_input.addEventListener("input", () =>
-          update_total_costs(row)
-        );
+        quantity_input.addEventListener("input", () => update_total_costs(row));
       }
     });
 
@@ -161,11 +169,7 @@
     });
 
     document.querySelectorAll(".updated-price").forEach((object) => {
-      observer.observe(object, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
+      observer.observe(object, { childList: true, subtree: true, characterData: true });
     });
   });
 </script>

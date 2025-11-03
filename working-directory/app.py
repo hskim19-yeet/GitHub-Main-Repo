@@ -14,8 +14,8 @@ app = Flask(__name__)
 
 AZ = ZoneInfo("America/Phoenix")
 
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password2025@database-1.cf4ak2q88oos.eu-central-1.rds.amazonaws.com/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password2025@database-1.cf4ak2q88oos.eu-central-1.rds.amazonaws.com/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -289,12 +289,14 @@ def get_market_context():
 
 @app.route("/update_stock_prices")
 def update_stock_prices():
-    MU = 0.00005
+    MU = 0.0003
     SIGMA = 0.0015
     JUMP_PROB = 0.004
     JUMP_SIZE = 0.01
+
     today_az = datetime.now(AZ).date()
     stocks = Stock.query.all()
+
     for stock in stocks:
         base = float(stock.current_price or 0) or 100.0
         pct = random.gauss(MU, SIGMA)
@@ -302,6 +304,7 @@ def update_stock_prices():
             pct += random.uniform(-JUMP_SIZE, JUMP_SIZE)
         new_price = max(0.01, round(base * (1.0 + pct), 2))
         stock.current_price = new_price
+
         if stock.day_date != today_az or stock.day_open is None:
             stock.day_date = today_az
             stock.day_open = Decimal(str(new_price))
@@ -313,8 +316,11 @@ def update_stock_prices():
                 stock.day_high = npd
             if stock.day_low is None or npd < stock.day_low:
                 stock.day_low = npd
+
     db.session.commit()
-    return jsonify({"status": "ok"})
+
+    payload = {s.stock_ticker: float(s.current_price or 0) for s in stocks}
+    return jsonify(payload)
 
 
 @app.route("/signup", methods=["GET", "POST"])
