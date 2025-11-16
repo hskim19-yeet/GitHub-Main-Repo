@@ -89,8 +89,8 @@
                   ${{ '%.2f'|format(last_price) }}
                 </td>
                 <td class="text-end">${{ '%.2f'|format(pos.purchase_price or 0) }}</td>
-                <td class="text-end">${{ '%.2f'|format(pos.stock.day_high or 0) }}</td>
-                <td class="text-end">${{ '%.2f'|format(pos.stock.day_low or 0) }}</td>
+                <td class="text-end day-high" data-symbol="{{ pos.stock.stock_ticker }}">${{ '%.2f'|format(pos.stock.day_high or 0) }}</td>
+                <td class="text-end day-low" data-symbol="{{ pos.stock.stock_ticker }}">${{ '%.2f'|format(pos.stock.day_low or 0) }}</td>
                 <td class="text-end" data-field="mktval">${{ '%.2f'|format(mkt_val) }}</td>
                 <td class="text-end" data-field="pnl">
                   <span class="{{ 'text-success' if pnl >= 0 else 'text-danger' }}">
@@ -202,23 +202,96 @@
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
+    function recalcRow(row, lastPrice) {
+      const qtyInput = row.querySelector("input[name='quantity']");
+      const totalSpan = row.querySelector(".total-profit");
+      const hiddenPrice = row.querySelector("input[name='price'][data-field='price']");
+      
+      if (!qtyInput || !totalSpan) return;
+
+      const qty = parseFloat(qtyInput.value || "0");
+      
+      let price;
+
+      if (typeof lastPrice === "number") {
+        price = lastPrice;
+      } else {
+        const priceCell = row.querySelector(".updated-price");
+        const text = (priceCell?.textContent || "0").replace("$", "").trim();
+        price = parseFloat(text) || 0;
+      }
+        
+      if (hiddenPrice) {
+        hiddenPrice.value = price.toFixed(2);
+      }
+
+      const proceeds = qty * price;
+      totalSpan.textContent = `$${proceeds.toFixed(2)}`;
+    }
+
     async function update_stock_prices() {
       try {
         const response = await fetch("/update_stock_prices");
         const json_data = await response.json();
+
         document.querySelectorAll(".updated-price").forEach((cell) => {
           const symbol = cell.dataset.symbol;
-          if (json_data[symbol] !== undefined) {
-            cell.textContent = `$${json_data[symbol].toFixed(2)}`;
-          }
+          const data = json_data[symbol];
+          if (!data) return;
+            cell.textContent = `$${data.price.toFixed(2)}`;
+          
         });
+
+        document.querySelectorAll(".day-high").forEach((cell) => {
+          const symbol = cell.dataset.symbol;
+          const data = json_data[symbol];
+          if (!data) return;
+            cell.textContent = `$${data.day_high.toFixed(2)}`;
+          
+        });
+
+        document.querySelectorAll(".day-low").forEach((cell) => {
+          const symbol = cell.dataset.symbol;
+          const data = json_data[symbol];
+          if (!data) return;
+          cell.textContent = `$${data.day_low.toFixed(2)}`;
+        });
+
+        document.querySelectorAll("[data-role='position-row']").forEach((row) => {
+          const symbol = row.dataset.ticker;
+          const quantity = parseFloat(row.dataset.qty || "0");
+          const avgCost = parseFloat(row.dataset.avg || "0");
+          const data = json_data[symbol];
+          if (!data) return;
+
+          const lastPrice = data.price;
+          const mktVal = quantity * lastPrice;
+          const pnl = quantity * (lastPrice - avgCost);
+
+          const mktValCell = row.querySelector("[data-field='mktval']");
+          mktValCell.textContent = `$${mktVal.toFixed(2)}`;
+
+          const pnlCell = row.querySelector("[data-field='pnl'] span");
+          pnlCell.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
+          pnlCell.className = pnl >= 0 ? 'text-success' : 'text-danger';  
+       
+          recalcRow(row, lastPrice);
+
+        }); 
+
       } catch (error) {
         console.error("Error fetching prices:", error);
       }
     }
 
+    document.querySelectorAll("[data-role='position-row']").forEach((row) => {
+      const qtyInput = row.querySelector("input[name='quantity']");
+      if (!qtyInput) return;
+      qtyInput.addEventListener("input", () => recalcRow(row));
+    })
+
     update_stock_prices();
-    setInterval(update_stock_prices, 15000);
+    setInterval(update_stock_prices, 10000);
   });
 </script>
 {% endblock %}

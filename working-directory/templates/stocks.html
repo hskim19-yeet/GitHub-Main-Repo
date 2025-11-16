@@ -46,14 +46,14 @@
       >
         ${{ '%.2f'|format(market_caps[stock.id]) }}
       </td>
-      <td>
+      <td class="day-high" data-symbol="{{ stock.stock_ticker }}">
         {% if stock.day_high is defined and stock.day_high is not none %}
           ${{ '%.2f'|format(stock.day_high) }}
         {% else %}
           —
         {% endif %}
       </td>
-      <td>
+      <td class="day-low" data-symbol="{{ stock.stock_ticker }}">
         {% if stock.day_low is defined and stock.day_low is not none %}
           ${{ '%.2f'|format(stock.day_low) }}
         {% else %}
@@ -108,20 +108,37 @@
       try {
         const response = await fetch("/update_stock_prices");
         const json_data = await response.json();
+        
         document.querySelectorAll(".updated-price").forEach((cell) => {
           const symbol = cell.dataset.symbol;
-          if (json_data[symbol] !== undefined) {
-            cell.textContent = `$${json_data[symbol].toFixed(2)}`;
-          }
+          const data = json_data[symbol];
+          if (!data) return; 
+          cell.textContent = `$${data.price.toFixed(2)}`;
+          
         });
         document.querySelectorAll(".market-cap").forEach((cell) => {
           const symbol = cell.dataset.symbol;
-          if (json_data[symbol] !== undefined) {
-            const outstanding_stocks = parseFloat(cell.dataset.outstanding);
-            const market_caps = outstanding_stocks * json_data[symbol];
-            cell.textContent = `$${market_caps.toFixed(2)}`;
-          }
+          const data = json_data[symbol];
+          if (!data) return; 
+          const outstanding_stocks = parseFloat(cell.dataset.outstanding);
+          const market_caps = outstanding_stocks * data.price;
+          cell.textContent = `$${market_caps.toFixed(2)}`;
+          
         });
+
+        document.querySelectorAll(".day-high").forEach((cell) => {
+          const symbol = cell.dataset.symbol;
+          const data = json_data[symbol];
+          if (!data) return; 
+          cell.textContent = `$${data.day_high.toFixed(2)}`;
+        });
+        document.querySelectorAll(".day-low").forEach((cell) => {
+          const symbol = cell.dataset.symbol;
+          const data = json_data[symbol];
+          if (!data) return; 
+          cell.textContent = `$${data.day_low.toFixed(2)}`;
+        });
+
       } catch (error) {
         console.error("Error fetching prices:", error);
       }
@@ -130,7 +147,7 @@
     update_stock_prices();
     let pollTimer = null;
     function startPolling() {
-      const delay = document.visibilityState === "visible" ? 15000 : 15000;
+      const delay = document.visibilityState === "visible" ? 10000 : 10000; 
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(update_stock_prices, delay);
     }

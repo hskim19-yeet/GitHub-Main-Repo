@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from functools import wraps
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, time
+from datetime import datetime, time, date
 from sqlalchemy import func, event
 import random
 from zoneinfo import ZoneInfo
@@ -14,8 +14,8 @@ app = Flask(__name__)
 
 AZ = ZoneInfo("America/Phoenix")
 
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -103,6 +103,11 @@ class Stock(TimestampMixin, db.Model):
     available_stocks = db.Column(db.Integer, nullable=False)
     current_price = db.Column(db.Float, nullable=True)
 
+    day_open = db.Column(db.Float, nullable=True)
+    day_high = db.Column(db.Float, nullable=True)
+    day_low = db.Column(db.Float, nullable=True)
+    day_date = db.Column(db.Date, nullable=True)
+
     orders = db.relationship("Order", backref="stock", lazy=True)
     portfolios = db.relationship("Portfolio", backref="stock", lazy=True)
 
@@ -143,7 +148,7 @@ class Transaction(TimestampMixin, db.Model):
 
     price = db.Column(db.Numeric(10, 2), nullable=False)
     transaction_type = db.Column(db.Enum(TransactionType), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    timestamp = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     stock = db.relationship('Stock', lazy='joined')
     user = db.relationship('User', lazy='joined')
@@ -174,21 +179,12 @@ def aztime(dt):
         return ""
     try:
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
-        return dt.astimezone(AZ).strftime("%Y-%m-%d %I:%M:%S %p")
+            dt = dt.replace(tzinfo=AZ)
+        else:
+            dt = dt.astimezone(AZ)
+        return dt.strftime("%Y-%m-%d %I:%M:%S %p")
     except Exception:
         return str(dt)
-
-
-def set_session_tz(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    try:
-        try:
-            cursor.execute("SET time_zone = 'America/Phoenix';")
-        except Exception:
-            cursor.execute("SET time_zone = '-07:00';")
-    finally:
-        cursor.close()
 
 
 def parse_time_string(value: str):
@@ -231,7 +227,7 @@ def get_market_context():
         db.session.add(setting)
         db.session.commit()
 
-    now = datetime.now()
+    now = datetime.now(AZ)
     weekday = now.strftime("%A")
     open_time, close_time = parse_market_hours(setting.hours or "")
     today = now.date()
@@ -298,10 +294,12 @@ def update_stock_prices():
     stocks = Stock.query.all()
 
     for stock in stocks:
+
         base = float(stock.current_price or 0) or 100.0
         pct = random.gauss(MU, SIGMA)
         if random.random() < JUMP_PROB:
             pct += random.uniform(-JUMP_SIZE, JUMP_SIZE)
+
         new_price = max(0.01, round(base * (1.0 + pct), 2))
         stock.current_price = new_price
 
@@ -319,7 +317,14 @@ def update_stock_prices():
 
     db.session.commit()
 
-    payload = {s.stock_ticker: float(s.current_price or 0) for s in stocks}
+    payload = {
+        s.stock_ticker: {
+            "price": float(s.current_price or 0),
+            "day_high": float(s.day_high or 0),
+            "day_low": float(s.day_low or 0),
+        }
+        for s in stocks
+    }
     return jsonify(payload)
 
 
@@ -401,7 +406,7 @@ def add_admin():
         is_admin = bool(request.form.get("is_admin"))
         u = User(username=username, email=email,
                  lastname=lastname, firstname=firstname,
-                 is_admin=True)
+                 is_admin=is_admin)
 
         u.set_password(password)
         try:
@@ -761,7 +766,7 @@ def add_user(username, email, lastname, firstname, password):
 def stocks():
     stocks = Stock.query.all()
     market = get_market_context()
-    today = datetime.now().date()
+    today = datetime.now(AZ).date()
 
     volumes = {}
     market_caps = {}
@@ -879,9 +884,9 @@ with app.app_context():
         cursor = dbapi_connection.cursor()
         try:
             try:
-                cursor.execute("SET time_zone = 'America/New_York';")
+                cursor.execute("SET time_zone = 'America/Phoenix';")
             except Exception:
-                cursor.execute("SET time_zone = '-05:00';")
+                cursor.execute("SET time_zone = '-07:00';")
         finally:
             cursor.close()
 
