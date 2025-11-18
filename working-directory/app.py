@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, abort
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
@@ -538,7 +538,6 @@ def add_closure():
 
     if not for_whole_day and open_hour_int and close_hour_int:
         try:
-            # This will raise value error if time is not inputted.
             open_hour = int(open_hour_int)
             close_hour = int(close_hour_int)
         except ValueError:
@@ -546,8 +545,6 @@ def add_closure():
             return redirect(url_for("admin_dashboard"))
 
     if existing_closures:
-        # if existing_closures but open and close times are different, allow editing.
-
         if (existing_closures.for_whole_day == for_whole_day and
                 (existing_closures.open_hour != open_hour or existing_closures.close_hour != close_hour)):
             open_hour = int(open_hour_int)
@@ -558,7 +555,7 @@ def add_closure():
             db.session.commit()
             flash(f"Updated market closure for {closure_date}.", "success")
             return redirect(url_for("admin_dashboard"))
-        # if existing_closures but whole_day status is different, allow editing (allow partial market open).
+        
         if (existing_closures.for_whole_day != for_whole_day and not for_whole_day):
             open_hour = int(open_hour_int)
             close_hour = int(close_hour_int)
@@ -568,7 +565,7 @@ def add_closure():
             db.session.commit()
             flash(f"Updated market closure for {closure_date}.", "success")
             return redirect(url_for("admin_dashboard"))
-        # if existing_closures but whole_day status is different, allow editing (allow whole_day closure).
+        
         if (existing_closures.for_whole_day != for_whole_day and for_whole_day):
             existing_closures.for_whole_day = for_whole_day
             existing_closures.open_hour = None
@@ -779,7 +776,6 @@ def stocks():
 
         volumes[stock.id] = abs(volume or 0)
 
-        # outstanding means shares that are owned by users
         total_held = db.session.query(func.sum(Portfolio.quantity)).filter(
             Portfolio.stock_id == stock.id).scalar() or 0
 
@@ -1049,7 +1045,7 @@ def add_position(user_id, stock_id, quantity):
         stock.available_stocks = stock.available_stocks - quantity
 
         t = Transaction(order_id=None, user_id=user_id,
-                        stock_id=stock_id, quantity=quantity, price=price)  # 20oct2025
+                        stock_id=stock_id, quantity=quantity, price=price)  
         db.session.add(t)
 
         pos = Portfolio.query.filter_by(

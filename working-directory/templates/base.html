@@ -172,12 +172,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
       (function () {
-        const REFRESH_MS = 15000;
 
         let pnlChart = null;
         const pnlCanvas = document.getElementById("pnlChart");
         if (pnlCanvas && window.Chart) {
-          pnlChart = new Chart(pnlCanvas.getContext("2d"), {
+          const ctx = pnlCanvas.getContext("2d");
+          pnlChart = new Chart(ctx, {
             type: "line",
             data: {
               labels: [],
@@ -201,42 +201,10 @@
               },
             },
           });
-        }
 
-        function updatePortfolioTotalsAndChart() {
-          const rows = document.querySelectorAll("[data-role='position-row']");
-          let totalMV = 0,
-            totalCost = 0;
+          window.stockcraft_push_pnl = function (pnl) {
+            if (!pnlChart || !isFinite(pnl)) return;
 
-          rows.forEach((row) => {
-            const qty = Number(row.getAttribute("data-qty") || 0);
-            const avg = Number(row.getAttribute("data-avg") || 0);
-            const lastPriceEl = row.querySelector("[data-field='price']");
-            let price = 0;
-            if (lastPriceEl) {
-              price = Number(
-                String(lastPriceEl.textContent || "0").replace(/[^0-9.\-]/g, "")
-              );
-            }
-            totalMV += qty * price;
-            totalCost += qty * avg;
-          });
-
-          const pnl = totalMV - totalCost;
-
-          const mvEl = document.getElementById("mvTotal");
-          const costEl = document.getElementById("costTotal");
-          const headEl = document.getElementById("pnlHeadline");
-
-          if (mvEl) mvEl.textContent = `$${totalMV.toFixed(2)}`;
-          if (costEl) costEl.textContent = `$${totalCost.toFixed(2)}`;
-          if (headEl) {
-            headEl.textContent = `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
-            headEl.classList.toggle("text-success", pnl >= 0);
-            headEl.classList.toggle("text-danger", pnl < 0);
-          }
-
-          if (pnlChart) {
             const now = new Date();
             const label = now.toLocaleTimeString([], {
               hour12: false,
@@ -244,6 +212,7 @@
               minute: "2-digit",
               second: "2-digit",
             });
+
             pnlChart.data.labels.push(label);
             pnlChart.data.datasets[0].data.push(pnl);
             if (pnlChart.data.labels.length > 100) {
@@ -251,90 +220,11 @@
               pnlChart.data.datasets[0].data.shift();
             }
             pnlChart.update();
-          }
+          };
+
         }
 
-        function updateRowProceeds(row) {
-          const qtyInput = row.querySelector("input[name='quantity']");
-          const priceEl = row.querySelector("[data-field='price']");
-          const proceedsElA = row.querySelector("[data-field='proceeds']");
-          const proceedsElB = row.querySelector(".total-profit");
-          const hiddenPrice = row.querySelector("input[name='price']");
-
-          const qty = Number(qtyInput?.value || 0);
-          const price = Number(
-            String(priceEl?.textContent || "0").replace(/[^0-9.\-]/g, "") || 0
-          );
-          const total = (qty * price).toFixed(2);
-
-          if (proceedsElA) proceedsElA.textContent = `$${total}`;
-          if (proceedsElB) proceedsElB.textContent = `$${total}`;
-          if (hiddenPrice) hiddenPrice.value = price.toFixed(2);
-        }
-
-        async function fetchPrices() {
-          try {
-            const res = await fetch("/update_stock_prices", {
-              cache: "no-store",
-            });
-            if (!res.ok) return;
-            const data = await res.json();
-
-            document
-              .querySelectorAll("[data-ticker][data-field]")
-              .forEach((el) => {
-                const tkr = el.getAttribute("data-ticker");
-                if (!(tkr in data)) return;
-                const live = Number(data[tkr]);
-                const field = el.getAttribute("data-field");
-
-                if (field === "price") {
-                  const formatted = live.toFixed(2);
-                  if (el.tagName === "INPUT") {
-                    el.value = formatted;
-                  } else {
-                    el.textContent = `$${formatted}`;
-                  }
-                  el.dispatchEvent(
-                    new CustomEvent("liveprice:update", {
-                      detail: { ticker: tkr, price: live },
-                    })
-                  );
-                }
-              });
-
-            document
-              .querySelectorAll("[data-role='position-row']")
-              .forEach((row) => {
-                const tkr = row.getAttribute("data-ticker");
-                if (!(tkr in data)) return;
-
-                const price = Number(data[tkr]);
-                const qty = Number(row.getAttribute("data-qty") || 0);
-                const avg = Number(row.getAttribute("data-avg") || 0);
-
-                const mktVal = qty * price;
-                const pnl = qty * (price - avg);
-
-                const mktValEl = row.querySelector("[data-field='mktval']");
-                const pnlEl = row.querySelector("[data-field='pnl']");
-                const lastPriceEl = row.querySelector("[data-field='price']");
-
-                if (lastPriceEl)
-                  lastPriceEl.textContent = `$${price.toFixed(2)}`;
-                if (mktValEl) mktValEl.textContent = `$${mktVal.toFixed(2)}`;
-                if (pnlEl) {
-                  pnlEl.textContent = `$${pnl.toFixed(2)}`;
-                  pnlEl.classList.toggle("text-success", pnl >= 0);
-                  pnlEl.classList.toggle("text-danger", pnl < 0);
-                }
-
-                updateRowProceeds(row);
-              });
-
-            updatePortfolioTotalsAndChart();
-          } catch (e) {}
-        }
+        
 
         let pendingForm = null;
         const modalEl = document.getElementById("tradeConfirmModal");
@@ -362,13 +252,16 @@
           if (!tkr) {
             const sel = form.querySelector("select[name='stock_id']");
             const opt = sel ? sel.options[sel.selectedIndex] : null;
-            if (opt && opt.dataset.ticker)
+            if (opt && opt.dataset.ticker) {
               tkr = String(opt.dataset.ticker).toUpperCase();
+            }  
           }
           if (!tkr) {
             const row = form.closest("[data-role='position-row']");
-            if (row)
+            if (row) {
+              
               tkr = String(row.getAttribute("data-ticker") || "").toUpperCase();
+            }  
           }
 
           const qty = Number(
@@ -390,15 +283,7 @@
               );
             }
           }
-          if (!price) {
-            const row = form.closest("[data-role='position-row']");
-            const rowPriceEl = row?.querySelector("[data-field='price']");
-            if (rowPriceEl) {
-              price = Number(
-                String(rowPriceEl.textContent || "0").replace(/[^0-9.\-]/g, "")
-              );
-            }
-          }
+          
           if (!isFinite(price)) price = 0;
 
           const total = qty * price;
@@ -426,19 +311,6 @@
             }
           });
         }
-
-        document
-          .querySelectorAll("[data-role='position-row']")
-          .forEach((row) => {
-            const qtyInput = row.querySelector("input[name='quantity']");
-            if (qtyInput) {
-              qtyInput.addEventListener("input", () => updateRowProceeds(row));
-              updateRowProceeds(row);
-            }
-          });
-
-        fetchPrices();
-        setInterval(fetchPrices, REFRESH_MS);
       })();
     </script>
   </body>

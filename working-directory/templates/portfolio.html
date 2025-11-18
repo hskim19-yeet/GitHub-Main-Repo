@@ -202,6 +202,49 @@
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
+    function cleanNumber(text) {
+      return parseFloat(text.replace(/[^0-9+.\-]/g,"")) || 0;
+    }
+
+    function recomputeTotals() {
+      let total_mv = 0;
+      let total_cost = 0;
+
+      document.querySelectorAll("[data-role='position-row']").forEach((row) => {
+        const qty = parseFloat(row.dataset.qty || "0") || 0;
+        const avg = parseFloat(row.dataset.avg || "0") || 0;
+
+        const priceCell = row.querySelector(".updated-price");
+        let price = 0;
+        if (priceCell) {
+          price = cleanNumber(priceCell.textContent);
+        }
+
+        total_mv += qty * price;
+        total_cost += qty * avg;
+      });
+      const totalPnL = total_mv - total_cost;
+
+      const mv_element = document.getElementById("mvTotal");
+      const cost_element = document.getElementById("costTotal");
+      const pnl_element = document.getElementById("pnlHeadline");
+
+      if (mv_element) { mv_element.textContent = `$${total_mv.toFixed(2)}`; }
+      if (cost_element) { cost_element.textContent = `$${total_cost.toFixed(2)}`; }
+      if (pnl_element) {
+        pnl_element.textContent = `${totalPnL >= 0 ? '+' : ''}$${totalPnL.toFixed(2)}`;
+        pnl_element.classList.remove('text-success', 'text-danger');
+        pnl_element.classList.add(totalPnL >= 0 ? 'text-success' : 'text-danger');
+      }
+
+      if (window.stockcraft_push_pnl) {
+        window.stockcraft_push_pnl(totalPnL);
+      }
+    }
+
+
+
+
     function recalcRow(row, lastPrice) {
       const qtyInput = row.querySelector("input[name='quantity']");
       const totalSpan = row.querySelector(".total-profit");
@@ -217,8 +260,8 @@
         price = lastPrice;
       } else {
         const priceCell = row.querySelector(".updated-price");
-        const text = (priceCell?.textContent || "0").replace("$", "").trim();
-        price = parseFloat(text) || 0;
+        const text = (priceCell?.textContent || "0");
+        price = cleanNumber(text);
       }
         
       if (hiddenPrice) {
@@ -259,8 +302,8 @@
 
         document.querySelectorAll("[data-role='position-row']").forEach((row) => {
           const symbol = row.dataset.ticker;
-          const quantity = parseFloat(row.dataset.qty || "0");
-          const avgCost = parseFloat(row.dataset.avg || "0");
+          const quantity = parseFloat(row.dataset.qty || "0") || 0;
+          const avgCost = parseFloat(row.dataset.avg || "0") || 0;
           const data = json_data[symbol];
           if (!data) return;
 
@@ -269,15 +312,20 @@
           const pnl = quantity * (lastPrice - avgCost);
 
           const mktValCell = row.querySelector("[data-field='mktval']");
-          mktValCell.textContent = `$${mktVal.toFixed(2)}`;
+          if (mktValCell) {
+            mktValCell.textContent = `$${mktVal.toFixed(2)}`;
+          }  
 
           const pnlCell = row.querySelector("[data-field='pnl'] span");
-          pnlCell.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
-          pnlCell.className = pnl >= 0 ? 'text-success' : 'text-danger';  
-       
+          if (pnlCell) {
+            pnlCell.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
+            pnlCell.className = pnl >= 0 ? 'text-success' : 'text-danger';  
+          }
+
           recalcRow(row, lastPrice);
 
         }); 
+        recomputeTotals();
 
       } catch (error) {
         console.error("Error fetching prices:", error);
@@ -289,6 +337,8 @@
       if (!qtyInput) return;
       qtyInput.addEventListener("input", () => recalcRow(row));
     })
+
+    recomputeTotals();
 
     update_stock_prices();
     setInterval(update_stock_prices, 10000);
