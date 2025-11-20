@@ -176,11 +176,18 @@ class ClosureDates(TimestampMixin, db.Model):
 
 @app.template_filter("aztime")
 def aztime(dt):
-    if dt is None:
+    if dt is None or dt == "":
         return ""
     try:
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt)
+                
+            except ValueError:
+                return dt
+        
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
+            dt = dt.replace(tzinfo=AZ)
                
         dt = dt.astimezone(AZ)
         return dt.strftime("%Y-%m-%d %I:%M:%S %p")
