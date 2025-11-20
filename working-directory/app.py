@@ -13,6 +13,7 @@ import enum
 app = Flask(__name__)
 
 AZ = ZoneInfo("America/Phoenix")
+UTC = ZoneInfo("UTC")
 
 #app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
@@ -179,9 +180,9 @@ def aztime(dt):
         return ""
     try:
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=AZ)
-        else:
-            dt = dt.astimezone(AZ)
+            dt = dt.replace(tzinfo=UTC)
+               
+        dt = dt.astimezone(AZ)
         return dt.strftime("%Y-%m-%d %I:%M:%S %p")
     except Exception:
         return str(dt)
