@@ -5,7 +5,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from functools import wraps
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, time, date
-from sqlalchemy import func, event
+from sqlalchemy import func, event, text
 import random
 from zoneinfo import ZoneInfo
 import enum
@@ -888,10 +888,10 @@ with app.app_context():
             cursor.close()
     
     try:
-        db.session.execute("""ALTER TABLE `transaction`
+        db.session.execute(text("""ALTER TABLE `transaction`
                             MODIFY COLUMN `timestamp` DATETIME
                             NOT NULL
-                            DEFAULT CURRENT_TIMESTAMP;""")
+                            DEFAULT CURRENT_TIMESTAMP;"""))
         db.session.commit()
         print("Transaction.timestamp column fixed.")
     except Exception as e:
