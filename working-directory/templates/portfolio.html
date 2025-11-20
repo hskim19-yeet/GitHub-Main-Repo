@@ -161,7 +161,7 @@
           <tbody>
             {% for t in txns %}
             <tr>
-              <td>{{ t.timestamp|aztime }}</td>
+              <td>{{ t.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</td>
               <td>{{ t.stock.stock_ticker if t.stock else '—' }}</td>
               <td>
                 {% if t.transaction_type.value == 'buy' %}
