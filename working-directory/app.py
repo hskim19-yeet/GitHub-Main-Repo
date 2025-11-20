@@ -13,7 +13,7 @@ import enum
 app = Flask(__name__)
 
 AZ = ZoneInfo("America/Phoenix")
-UTC = ZoneInfo("UTC")
+
 
 #app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
@@ -176,20 +176,13 @@ class ClosureDates(TimestampMixin, db.Model):
 
 @app.template_filter("aztime")
 def aztime(dt):
-    if dt is None or dt == "":
+    if dt is None:
         return ""
     try:
-        if isinstance(dt, str):
-            try:
-                dt = datetime.fromisoformat(dt)
-                
-            except ValueError:
-                return dt
-        
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=AZ)
-               
-        dt = dt.astimezone(AZ)
+        else:
+            dt = dt.astimezone(AZ)
         return dt.strftime("%Y-%m-%d %I:%M:%S %p")
     except Exception:
         return str(dt)
