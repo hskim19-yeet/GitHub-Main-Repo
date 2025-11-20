@@ -886,8 +886,18 @@ with app.app_context():
                 cursor.execute("SET time_zone = '-07:00';")
         finally:
             cursor.close()
+    
+    try:
+        db.session.execute("""ALTER TABLE `transaction`
+                            MODIFY COLUMN `timestamp` DATETIME
+                            NOT NULL
+                            DEFAULT CURRENT_TIMESTAMP;""")
+        db.session.commit()
+        print("Transaction.timestamp column fixed.")
+    except Exception as e:
+        print(f"(Info) ALTER TABLE skipped: {e}")
 
-
+   
 @app.route("/portfolio")
 @login_required
 def portfolio_index():
