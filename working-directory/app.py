@@ -15,8 +15,8 @@ app = Flask(__name__)
 AZ = ZoneInfo("America/Phoenix")
 
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
