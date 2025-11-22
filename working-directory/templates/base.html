@@ -25,7 +25,10 @@
       class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top"
     >
       <div class="container-fluid">
-        <a class="navbar-brand d-flex align-items-center fw-bold gap-2" href="{{ url_for('home') }}">
+        <a
+          class="navbar-brand d-flex align-items-center fw-bold gap-2"
+          href="{{ url_for('home') }}"
+        >
           <img
             src="{{ url_for('static', filename='images/stockcraft_logo.png') }}"
             alt="StockCraft logo"
@@ -83,10 +86,10 @@
             </li>
 
             <li class="nav-item">
-              <span class="navbar-text me-3">
-                Hi, {{ current_user.username }}{% if current_user.is_admin %}
-                (Admin){% endif %}
-              </span>
+              <span class="navbar-text me-3"
+                >Hi, {{ current_user.username }}{% if current_user.is_admin %}
+                (Admin){% endif %}</span
+              >
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
@@ -126,7 +129,6 @@
               type="button"
               class="btn-close btn-close-white"
               data-bs-dismiss="modal"
-              aria-label="Close"
             ></button>
           </div>
           <div class="modal-body">
@@ -170,21 +172,46 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <script>
       (function () {
+        const isAuthed = {{ 'true' if current_user.is_authenticated else 'false' }};
+        const STORAGE_KEY = "stockcraft_pnl_series";
 
+        function loadPnlSeries() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return { labels: [], data: [] };
+            const parsed = JSON.parse(raw);
+            return {
+              labels: Array.isArray(parsed.labels) ? parsed.labels : [],
+              data: Array.isArray(parsed.data) ? parsed.data : [],
+            };
+          } catch (e) {
+            return { labels: [], data: [] };
+          }
+        }
+
+        function savePnlSeries(series) {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(series));
+          } catch (e) {}
+        }
+
+        let pnlSeries = loadPnlSeries();
         let pnlChart = null;
+
         const pnlCanvas = document.getElementById("pnlChart");
         if (pnlCanvas && window.Chart) {
           const ctx = pnlCanvas.getContext("2d");
           pnlChart = new Chart(ctx, {
             type: "line",
             data: {
-              labels: [],
+              labels: [...pnlSeries.labels],
               datasets: [
                 {
                   label: "Unrealized P/L",
-                  data: [],
+                  data: [...pnlSeries.data],
                   tension: 0.25,
                   fill: false,
                   borderWidth: 2,
@@ -201,30 +228,52 @@
               },
             },
           });
-
-          window.stockcraft_push_pnl = function (pnl) {
-            if (!pnlChart || !isFinite(pnl)) return;
-
-            const now = new Date();
-            const label = now.toLocaleTimeString([], {
-              hour12: false,
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            });
-
-            pnlChart.data.labels.push(label);
-            pnlChart.data.datasets[0].data.push(pnl);
-            if (pnlChart.data.labels.length > 100) {
-              pnlChart.data.labels.shift();
-              pnlChart.data.datasets[0].data.shift();
-            }
-            pnlChart.update();
-          };
-
         }
 
-        
+        window.stockcraft_push_pnl = function (pnl) {
+          if (!isFinite(pnl)) return;
+
+          const now = new Date();
+          const label = now.toLocaleTimeString([], {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+
+          pnlSeries.labels.push(label);
+          pnlSeries.data.push(pnl);
+
+          const maxPoints = 100;
+          if (pnlSeries.labels.length > maxPoints) {
+            pnlSeries.labels = pnlSeries.labels.slice(-maxPoints);
+            pnlSeries.data = pnlSeries.data.slice(-maxPoints);
+          }
+
+          savePnlSeries(pnlSeries);
+
+          if (pnlChart) {
+            pnlChart.data.labels = [...pnlSeries.labels];
+            pnlChart.data.datasets[0].data = [...pnlSeries.data];
+            pnlChart.update();
+          }
+        };
+
+        if (isAuthed) {
+          async function pollPnl() {
+            try {
+              const resp = await fetch("/api/portfolio_updater", { cache: "no-store" });
+              if (!resp.ok) return;
+              const json = await resp.json();
+              if (typeof json.total_pnl === "number") {
+                window.stockcraft_push_pnl(json.total_pnl);
+              }
+            } catch (e) {}
+          }
+
+          pollPnl();
+          setInterval(pollPnl, 10000);
+        }
 
         let pendingForm = null;
         const modalEl = document.getElementById("tradeConfirmModal");
@@ -244,9 +293,7 @@
 
           e.preventDefault();
 
-          const action = (
-            form.getAttribute("data-action") || "trade"
-          ).toUpperCase();
+          const action = (form.getAttribute("data-action") || "trade").toUpperCase();
 
           let tkr = (form.getAttribute("data-ticker") || "").toUpperCase();
           if (!tkr) {
@@ -254,19 +301,16 @@
             const opt = sel ? sel.options[sel.selectedIndex] : null;
             if (opt && opt.dataset.ticker) {
               tkr = String(opt.dataset.ticker).toUpperCase();
-            }  
+            }
           }
           if (!tkr) {
             const row = form.closest("[data-role='position-row']");
             if (row) {
-              
               tkr = String(row.getAttribute("data-ticker") || "").toUpperCase();
-            }  
+            }
           }
 
-          const qty = Number(
-            form.querySelector("input[name='quantity']")?.value || 0
-          );
+          const qty = Number(form.querySelector("input[name='quantity']")?.value || 0);
 
           let price = 0;
           const priceInput = form.querySelector("input[name='price']");
@@ -274,16 +318,12 @@
             price = Number(priceInput.value);
           }
           if (!price) {
-            const formPriceEl = form.querySelector(
-              "[data-field='price'], [data-field='last-price']"
-            );
+            const formPriceEl = form.querySelector("[data-field='price'], [data-field='last-price']");
             if (formPriceEl) {
-              price = Number(
-                String(formPriceEl.textContent || "0").replace(/[^0-9.\-]/g, "")
-              );
+              price = Number(String(formPriceEl.textContent || "0").replace(/[^0-9.\-]/g, ""));
             }
           }
-          
+
           if (!isFinite(price)) price = 0;
 
           const total = qty * price;

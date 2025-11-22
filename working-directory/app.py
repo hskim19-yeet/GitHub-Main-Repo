@@ -15,8 +15,8 @@ app = Flask(__name__)
 AZ = ZoneInfo("America/Phoenix")
 
 
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:password@localhost/stockcraft_db'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:IFT401@localhost/stockcraft_db'
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://admin:password@ift401capstonedb.cr2yo46oe8hh.us-east-2.rds.amazonaws.com/stockcraft_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key'
 
@@ -149,7 +149,8 @@ class Transaction(TimestampMixin, db.Model):
 
     price = db.Column(db.Numeric(10, 2), nullable=False)
     transaction_type = db.Column(db.Enum(TransactionType), nullable=False)
-    timestamp = db.Column(db.DateTime(timezone=True), server_default=func.now(), nullable=False)
+    timestamp = db.Column(db.DateTime(timezone=True),
+                          server_default=func.now(), nullable=False)
 
     stock = db.relationship('Stock', lazy='joined')
     user = db.relationship('User', lazy='joined')
@@ -556,7 +557,7 @@ def add_closure():
             db.session.commit()
             flash(f"Updated market closure for {closure_date}.", "success")
             return redirect(url_for("admin_dashboard"))
-        
+
         if (existing_closures.for_whole_day != for_whole_day and not for_whole_day):
             open_hour = int(open_hour_int)
             close_hour = int(close_hour_int)
@@ -566,7 +567,7 @@ def add_closure():
             db.session.commit()
             flash(f"Updated market closure for {closure_date}.", "success")
             return redirect(url_for("admin_dashboard"))
-        
+
         if (existing_closures.for_whole_day != for_whole_day and for_whole_day):
             existing_closures.for_whole_day = for_whole_day
             existing_closures.open_hour = None
@@ -707,6 +708,36 @@ def add_order():
     db.session.commit()
     flash("Order executed.", "success")
     return redirect(url_for("portfolio", user_id=user_id))
+
+
+@app.route("/api/portfolio_updater")
+@login_required
+def api_portfolio_pnl():
+    positions = Portfolio.query.filter_by(user_id=current_user.user_id).all()
+
+    total_mv = Decimal("0.00")
+    total_cost = Decimal("0.00")
+
+    for pos in positions:
+        qty = Decimal(pos.quantity or 0)
+        avg = Decimal(str(pos.purchase_price or 0))
+
+        last_price = pos.stock.current_price
+        if last_price is None:
+            last_price = pos.current_price_snapshot
+
+        last_price = Decimal(str(last_price or 0))
+
+        total_mv += qty * last_price
+        total_cost += qty * avg
+
+    total_pnl = total_mv - total_cost
+
+    return jsonify(
+        total_mv=float(total_mv),
+        total_cost=float(total_cost),
+        total_pnl=float(total_pnl),
+    )
 
 
 @app.route("/orders/sell/<int:order_id>")
@@ -886,7 +917,7 @@ with app.app_context():
                 cursor.execute("SET time_zone = '-07:00';")
         finally:
             cursor.close()
-    
+
     try:
         db.session.execute(text("""ALTER TABLE `transaction`
                             MODIFY COLUMN `timestamp` DATETIME
@@ -897,7 +928,7 @@ with app.app_context():
     except Exception as e:
         print(f"(Info) ALTER TABLE skipped: {e}")
 
-   
+
 @app.route("/portfolio")
 @login_required
 def portfolio_index():
@@ -1056,7 +1087,7 @@ def add_position(user_id, stock_id, quantity):
         stock.available_stocks = stock.available_stocks - quantity
 
         t = Transaction(order_id=None, user_id=user_id,
-                        stock_id=stock_id, quantity=quantity, price=price)  
+                        stock_id=stock_id, quantity=quantity, price=price)
         db.session.add(t)
 
         pos = Portfolio.query.filter_by(
