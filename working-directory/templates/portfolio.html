@@ -202,7 +202,7 @@ content %}
           <tbody>
             {% for t in txns %}
             <tr>
-              <td>{{ t.timestamp|aztime }}</td>
+              <td style="white-space: nowrap;">{{ t.timestamp|aztime }}</td>
               <td>{{ t.stock.stock_ticker if t.stock else '—' }}</td>
               <td>
                 {% if t.transaction_type.value == 'buy' %}
