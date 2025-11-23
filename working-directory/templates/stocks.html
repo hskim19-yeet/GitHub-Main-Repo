@@ -68,6 +68,7 @@
           data-confirm="trade"
           data-action="buy"
           data-price="{{ stock.current_price }}"
+          data-ticker="{{ stock.stock_ticker }}"
         >
           <input type="hidden" name="stock_id" value="{{stock.id}}" />
           <input type="hidden" name="price" value="{{stock.current_price}}" />
